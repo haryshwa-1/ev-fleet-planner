@@ -17,6 +17,16 @@ public record GeoModel(double roadFactor, double peakSpeedKmph, double offPeakSp
         return (int) Math.ceil(km / speed * 60.0 - 1e-9);
     }
 
+    /**
+     * Earliest possible arrival when free to leave at {@code readyAt}: either go now, or wait for
+     * traffic to clear and go then. Used for lower bounds, so it must never be later than any real plan.
+     */
+    public int earliestArrival(double km, int readyAt) {
+        int now = readyAt + travelMinutes(km, readyAt);
+        int later = traffic.nextOffPeak(readyAt);
+        return Math.min(now, later + travelMinutes(km, later));
+    }
+
     /** Travel time when the departure minute is not known yet: assume the slower speed. */
     public int worstCaseTravelMinutes(double km) {
         return (int) Math.ceil(km / Math.min(peakSpeedKmph, offPeakSpeedKmph) * 60.0 - 1e-9);
