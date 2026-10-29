@@ -133,9 +133,9 @@ public final class ScenarioGenerator {
         return BATCHES[BATCHES.length - 1][0];
     }
 
-    /** Homes lie 4 to 18 km (straight line) from the office, clipped to the city. */
+    /** Homes lie 3 to 14 km (straight line) from the office, clipped to the city. */
     private static Location homeNear(Random rnd, Location office) {
-        double radius = 4 + rnd.nextDouble() * 14;
+        double radius = 3 + rnd.nextDouble() * 11;
         double angle = rnd.nextDouble() * 2 * Math.PI;
         return clip(new Location(office.x() + radius * Math.cos(angle), office.y() + radius * Math.sin(angle)));
     }
