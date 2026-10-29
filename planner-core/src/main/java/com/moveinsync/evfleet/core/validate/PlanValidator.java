@@ -40,6 +40,7 @@ public final class PlanValidator {
     private static final double KWH_EPS = 1e-3;
     private static final double KM_EPS = 0.01;
     private static final double LOC_EPS = 1e-6;
+    private static final double RUPEE_EPS = 0.01;
 
     public ValidationReport validate(Scenario scenario, Plan plan) {
         return new Run(scenario, plan).execute();
@@ -200,11 +201,15 @@ public final class PlanValidator {
             // Integrate minute by minute so the tariff can change mid-session.
             double power = physics.chargePowerKW(v, charger);
             double s = soc;
+            double sessionCost = 0;
             for (int m = c.start(); m < c.end(); m++) {
                 double next = physics.curve().socAfter(v.batteryKWh(), s, power, 1);
-                cost += (next - s) * scenario.tariff().rateAt(m);
+                sessionCost += (next - s) * scenario.tariff().rateAt(m);
                 s = next;
             }
+            cost += sessionCost;
+            check(Math.abs(c.costRupees() - sessionCost) <= RUPEE_EPS, Rule.COST_MISMATCH, where,
+                    String.format("plan says Rs %.2f, tariff gives Rs %.2f", c.costRupees(), sessionCost));
             check(s <= v.batteryKWh() + KWH_EPS, Rule.CHARGE_CURVE, where, "charged above capacity");
             check(c.socEndKWh() <= s + KWH_EPS, Rule.CHARGE_CURVE, where,
                     String.format("claims %.3f kWh, curve allows at most %.3f", c.socEndKWh(), s));

@@ -22,6 +22,8 @@ public enum Rule {
     CHARGE_CURVE,
     /** The state of charge written in the plan differs from the recomputed one. */
     STATE_MISMATCH,
+    /** A session's cost differs from the tariff applied to the energy actually added, minute by minute. */
+    COST_MISMATCH,
     /** A session uses a charger after it failed or at the wrong hub. */
     CHARGER_UNAVAILABLE,
     /** Two sessions on the same charger overlap. */

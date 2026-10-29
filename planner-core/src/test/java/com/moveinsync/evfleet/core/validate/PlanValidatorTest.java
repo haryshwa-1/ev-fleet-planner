@@ -153,12 +153,23 @@ class PlanValidatorTest {
     }
 
     @Test
+    void costMismatch_rejectsAWrongSessionCost() {
+        // Flat Rs 10/kWh: the reported cost must equal 10 x the energy actually added.
+        Scenario s = scenario(List.of(cab("CAB-1", 5, ORIGIN)), List.of(hub), List.of());
+        double after = s.physics().curve().socAfter(20, 5, 30, 30);
+        Plan p = plan(Map.of("CAB-1", List.of(new ChargingSession("H1", "H1-C1", 600, 630, ORIGIN, 5, after, 1))),
+                List.of());
+        ValidationReport r = validator.validate(s, p);
+        assertThat(r.violationsByRule()).containsOnlyKeys(Rule.COST_MISMATCH);
+    }
+
+    @Test
     void chargerCapacity_rejectsTwoCabsOnOneChargerAtOnce() {
         Scenario s = scenario(List.of(cab("CAB-1", 5, ORIGIN), cab("CAB-2", 5, ORIGIN)), List.of(hub), List.of());
         double after = s.physics().curve().socAfter(20, 5, 30, 30);
         Plan p = plan(Map.of(
-                "CAB-1", List.of(new ChargingSession("H1", "H1-C1", 600, 630, ORIGIN, 5, after, 0)),
-                "CAB-2", List.of(new ChargingSession("H1", "H1-C1", 620, 650, ORIGIN, 5, after, 0))), List.of());
+                "CAB-1", List.of(new ChargingSession("H1", "H1-C1", 600, 630, ORIGIN, 5, after, (after - 5) * 10)),
+                "CAB-2", List.of(new ChargingSession("H1", "H1-C1", 620, 650, ORIGIN, 5, after, (after - 5) * 10))), List.of());
         ValidationReport r = validator.validate(s, p);
         assertThat(r.violationsByRule()).containsKeys(Rule.CHARGER_DOUBLE_BOOKED, Rule.HUB_CAPACITY_EXCEEDED);
     }
@@ -168,8 +179,8 @@ class PlanValidatorTest {
         Scenario s = scenario(List.of(cab("CAB-1", 5, ORIGIN), cab("CAB-2", 5, ORIGIN)), List.of(hub), List.of());
         double after = s.physics().curve().socAfter(20, 5, 30, 30);
         Plan p = plan(Map.of(
-                "CAB-1", List.of(new ChargingSession("H1", "H1-C1", 600, 630, ORIGIN, 5, after, 0)),
-                "CAB-2", List.of(new ChargingSession("H1", "H1-C1", 630, 660, ORIGIN, 5, after, 0))), List.of());
+                "CAB-1", List.of(new ChargingSession("H1", "H1-C1", 600, 630, ORIGIN, 5, after, (after - 5) * 10)),
+                "CAB-2", List.of(new ChargingSession("H1", "H1-C1", 630, 660, ORIGIN, 5, after, (after - 5) * 10))), List.of());
         ValidationReport r = validator.validate(s, p);
         assertThat(r.valid()).isTrue();
         // 5 -> 16 kWh fast (knee), then slow; flat Rs 10/kWh on what was added
@@ -182,7 +193,7 @@ class PlanValidatorTest {
         Hub broken = new Hub("H1", ORIGIN, List.of(hub.chargers().get(0).failedAt(615)));
         Scenario s = scenario(List.of(cab("CAB-1", 5, ORIGIN)), List.of(broken), List.of());
         double after = s.physics().curve().socAfter(20, 5, 30, 30);
-        Plan p = plan(Map.of("CAB-1", List.of(new ChargingSession("H1", "H1-C1", 600, 630, ORIGIN, 5, after, 0))),
+        Plan p = plan(Map.of("CAB-1", List.of(new ChargingSession("H1", "H1-C1", 600, 630, ORIGIN, 5, after, (after - 5) * 10))),
                 List.of());
         ValidationReport r = validator.validate(s, p);
         assertThat(r.violationsByRule()).containsKeys(Rule.CHARGER_UNAVAILABLE, Rule.HUB_CAPACITY_EXCEEDED);
