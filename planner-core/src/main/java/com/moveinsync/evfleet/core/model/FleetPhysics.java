@@ -21,9 +21,14 @@ public record FleetPhysics(GeoModel geo, ConsumptionModel consumption, ChargingC
         return Math.min(v.maxChargeKW(), c.powerKW());
     }
 
-    /** Energy for a drive of {@code km} leaving at {@code departMinute}; peak km cost more. */
+    /** Energy for a drive of {@code km} leaving at {@code departMinute}; slow traffic costs more per km. */
     public double driveEnergyKWh(Vehicle v, double km, int departMinute) {
-        return consumption.energyKWh(v, km, geo.peakKm(km, departMinute));
+        return consumption.energyKWh(v, geo.effectiveKm(km, departMinute));
+    }
+
+    /** Highest energy the drive could take, whatever the departure time. */
+    public double worstCaseDriveEnergyKWh(Vehicle v, double km) {
+        return consumption.energyKWh(v, km * geo.traffic().highestEnergyFactor());
     }
 
     /** Minutes a trip takes when it starts on time. */

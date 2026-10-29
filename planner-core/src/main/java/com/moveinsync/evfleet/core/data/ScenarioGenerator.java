@@ -49,12 +49,25 @@ public final class ScenarioGenerator {
     }
 
     public static FleetPhysics standardPhysics() {
-        TrafficProfile traffic = new TrafficProfile(hm(17, 30), hm(21, 0));
         return new FleetPhysics(
-                new GeoModel(1.3, 20.0, 32.0, traffic),
-                new ConsumptionModel(1.15, 1.10),
+                new GeoModel(1.3, standardTraffic()),
+                new ConsumptionModel(1.10),
                 TwoSegmentChargingCurve.standard(),
                 0.15);
+    }
+
+    /**
+     * Evening traffic for a large Indian city: it builds from 16:30, is worst 17:30-19:00 and eases
+     * through the evening; free flow at 36 km/h from 23:00. Illustrative values, meant to be replaced
+     * by measured speeds for a real city.
+     */
+    public static TrafficProfile standardTraffic() {
+        return new TrafficProfile(List.of(
+                new TrafficProfile.Band("BUILDING", hm(16, 30), hm(17, 30), 28, 1.05),
+                new TrafficProfile.Band("PEAK", hm(17, 30), hm(19, 0), 18, 1.18),
+                new TrafficProfile.Band("HEAVY", hm(19, 0), hm(20, 30), 22, 1.12),
+                new TrafficProfile.Band("EASING", hm(20, 30), hm(21, 30), 27, 1.06),
+                new TrafficProfile.Band("EVENING", hm(21, 30), hm(23, 0), 32, 1.02)), 36);
     }
 
     public static Tariff standardTariff() {

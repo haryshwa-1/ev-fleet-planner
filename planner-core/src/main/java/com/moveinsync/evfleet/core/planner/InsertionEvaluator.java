@@ -56,7 +56,7 @@ public final class InsertionEvaluator {
     public double reserveKWh(Vehicle v, Location at) {
         double best = Double.MAX_VALUE;
         for (Hub h : hubs) {
-            best = Math.min(best, physics.consumption().worstCaseEnergyKWh(v, physics.geo().roadKm(at, h.location())));
+            best = Math.min(best, physics.worstCaseDriveEnergyKWh(v, physics.geo().roadKm(at, h.location())));
         }
         return best;
     }
@@ -124,7 +124,7 @@ public final class InsertionEvaluator {
 
             double toPickupKm = physics.geo().roadKm(hub.location(), trip.start());
             int leaveBy = trip.startTime() - physics.geo().worstCaseTravelMinutes(toPickupKm);
-            double required = afterTripNeed + tripEnergy + physics.consumption().worstCaseEnergyKWh(v, toPickupKm);
+            double required = afterTripNeed + tripEnergy + physics.worstCaseDriveEnergyKWh(v, toPickupKm);
             if (required > v.batteryKWh()) continue;
             diag.anyReachable |= arriveHub <= leaveBy;
 

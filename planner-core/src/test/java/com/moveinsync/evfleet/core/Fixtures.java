@@ -24,8 +24,8 @@ public final class Fixtures {
 
     public static final Location ORIGIN = new Location(0, 0);
     public static final FleetPhysics PHYSICS = new FleetPhysics(
-            new GeoModel(1.0, 30, 30, new TrafficProfile(0, 0)),
-            new ConsumptionModel(1.0, 1.0),
+            new GeoModel(1.0, TrafficProfile.freeFlow(30)),
+            new ConsumptionModel(1.0),
             TwoSegmentChargingCurve.standard(),
             0.15);
     public static final Tariff FLAT = new Tariff(List.of(), 10.0);
