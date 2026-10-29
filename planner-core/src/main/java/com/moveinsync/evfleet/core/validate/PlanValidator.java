@@ -151,7 +151,7 @@ public final class PlanValidator {
                             int minMinutes = physics.geo().travelMinutes(t.distanceKm(), t.startTime());
                             check(leg.end() - leg.start() >= minMinutes, Rule.TRAVEL_TIME, where,
                                     "trip " + t.id() + " shorter than " + minMinutes + " min");
-                            soc -= physics.consumption().energyKWh(v, t.distanceKm(), leg.start());
+                            soc -= physics.driveEnergyKWh(v, t.distanceKm(), leg.start());
                         }
                     }
                     case ChargingSession c -> {
@@ -179,7 +179,7 @@ public final class PlanValidator {
             int minMinutes = physics.geo().travelMinutes(expectedKm, start);
             check(end - start >= minMinutes, Rule.TRAVEL_TIME, where,
                     "drive takes " + (end - start) + " min, needs " + minMinutes);
-            return soc - physics.consumption().energyKWh(v, expectedKm, start);
+            return soc - physics.driveEnergyKWh(v, expectedKm, start);
         }
 
         private double checkCharge(Vehicle v, String where, ChargingSession c, Map<String, Hub> hubs,

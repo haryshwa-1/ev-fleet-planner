@@ -21,12 +21,17 @@ public record FleetPhysics(GeoModel geo, ConsumptionModel consumption, ChargingC
         return Math.min(v.maxChargeKW(), c.powerKW());
     }
 
-    /** Minutes a trip takes, evaluated at its start time. */
+    /** Energy for a drive of {@code km} leaving at {@code departMinute}; peak km cost more. */
+    public double driveEnergyKWh(Vehicle v, double km, int departMinute) {
+        return consumption.energyKWh(v, km, geo.peakKm(km, departMinute));
+    }
+
+    /** Minutes a trip takes when it starts on time. */
     public int tripMinutes(Trip t) {
         return geo.travelMinutes(t.distanceKm(), t.startTime());
     }
 
     public double tripEnergyKWh(Vehicle v, Trip t) {
-        return consumption.energyKWh(v, t.distanceKm(), t.startTime());
+        return driveEnergyKWh(v, t.distanceKm(), t.startTime());
     }
 }

@@ -52,7 +52,7 @@ public final class ScenarioGenerator {
         TrafficProfile traffic = new TrafficProfile(hm(17, 30), hm(21, 0));
         return new FleetPhysics(
                 new GeoModel(1.3, 20.0, 32.0, traffic),
-                new ConsumptionModel(1.15, 1.10, traffic),
+                new ConsumptionModel(1.15, 1.10),
                 TwoSegmentChargingCurve.standard(),
                 0.15);
     }

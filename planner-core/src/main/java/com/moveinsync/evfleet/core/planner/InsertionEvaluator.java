@@ -90,7 +90,7 @@ public final class InsertionEvaluator {
         }
         diag.anyReachable = true;
 
-        double socAtPickup = cab.socKWh() - physics.consumption().energyKWh(v, km, depart);
+        double socAtPickup = cab.socKWh() - physics.driveEnergyKWh(v, km, depart);
         double socAfter = socAtPickup - physics.tripEnergyKWh(v, trip);
         double needed = floor + reserveKWh(v, trip.end());
         if (socAtPickup < floor || socAfter < needed) {
@@ -119,7 +119,7 @@ public final class InsertionEvaluator {
             int depart = cab.freeAt();
             double toHubKm = physics.geo().roadKm(cab.location(), hub.location());
             int arriveHub = depart + physics.geo().travelMinutes(toHubKm, depart);
-            double socAtHub = cab.socKWh() - physics.consumption().energyKWh(v, toHubKm, depart);
+            double socAtHub = cab.socKWh() - physics.driveEnergyKWh(v, toHubKm, depart);
             if (socAtHub < floor) continue;
 
             double toPickupKm = physics.geo().roadKm(hub.location(), trip.start());
@@ -158,7 +158,7 @@ public final class InsertionEvaluator {
         double socCharged = physics.curve().socAfter(v.batteryKWh(), socAtHub, power, duration);
         double cost = chargingCost(v, socAtHub, power, chargeStart, duration);
         int arrivePickup = chargeEnd + physics.geo().travelMinutes(toPickupKm, chargeEnd);
-        double socAtPickup = socCharged - physics.consumption().energyKWh(v, toPickupKm, chargeEnd);
+        double socAtPickup = socCharged - physics.driveEnergyKWh(v, toPickupKm, chargeEnd);
         double socAfter = socAtPickup - physics.tripEnergyKWh(v, trip);
         if (arrivePickup > trip.startTime() || socAtPickup < floor
                 || socAfter < floor + reserveKWh(v, trip.end())) {
