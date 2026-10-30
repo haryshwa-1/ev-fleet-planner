@@ -80,7 +80,7 @@ public final class Replanner {
         Activity current = snap.inProgress(e.cabId());
         double plannedNow = current == null ? v.initialSocKWh() : socAt(current, e.minute());
         double corrected = clamp(v.initialSocKWh() + (e.socKWh() - plannedNow), 0, v.batteryKWh());
-        if (isStranded(current, corrected, e.socKWh(), scenario.physics().floorKWh(v))) {
+        if (isStranded(snap.scenario(), v, current, corrected, e.socKWh())) {
             return strand(snap, v, current, e, t0);
         }
         Vehicle actual = v.withSoc(corrected);
@@ -96,9 +96,13 @@ public final class Replanner {
     }
 
     /** True if the cab cannot legally finish what it is doing, or cannot move at all if it is parked. */
-    private static boolean isStranded(Activity current, double startSoc, double reported, double floor) {
+    private static boolean isStranded(Scenario scenario, Vehicle v, Activity current, double startSoc, double reported) {
+        double floor = scenario.physics().floorKWh(v);
         if (current == null) return reported < floor;
-        if (current instanceof ChargingSession) return false;
+        if (current instanceof ChargingSession c) {
+            double power = scenario.physics().chargePowerKW(v, scenario.chargersById().get(c.chargerId()));
+            return scenario.physics().curve().socAfter(v.batteryKWh(), startSoc, power, c.end() - c.start()) < floor;
+        }
         return startSoc - (current.socStartKWh() - current.socEndKWh()) < floor;
     }
 
@@ -215,13 +219,17 @@ public final class Replanner {
             if (cab != null) pending.computeIfAbsent(cab, k -> new java.util.ArrayDeque<>()).add(t);
         }
 
+        // A re-plan only looks at nearby cabs, so a trip that was already a backup keeps the reason
+        // from when every cab was considered.
+        Map<String, UnassignedTrip> earlierReasons = new HashMap<>();
+        before.unassigned().forEach(u -> earlierReasons.put(u.tripId(), u));
         List<UnassignedTrip> unassigned = new ArrayList<>(abandoned);
         for (Trip trip : freed) {
             CabState original = states.get(owner.get(trip.id()));
             if (original != null) pending.get(original.id()).poll();
             if (original != null && reuse(original, segments.get(trip.id()), book)) continue;
             UnassignedTrip rejected = assignSticky(trip, states.values(), original, pending, evaluator, book);
-            if (rejected != null) unassigned.add(rejected);
+            if (rejected != null) unassigned.add(earlierReasons.getOrDefault(trip.id(), rejected));
         }
 
         Map<String, List<Activity>> timelines = new LinkedHashMap<>();

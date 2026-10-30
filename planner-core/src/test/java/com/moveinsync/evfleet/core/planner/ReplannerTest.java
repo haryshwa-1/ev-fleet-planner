@@ -227,6 +227,33 @@ class ReplannerTest {
         assertThat(r.after().timeline(cab)).isEmpty();
     }
 
+    @Test
+    void aBackupTripThatStaysABackupKeepsItsReason() {
+        Replanner.Result r = replanner.onChargerFailure(scenario, plan, new Replanner.ChargerFailure("H1-C1", hm(19, 0)));
+        Map<String, com.moveinsync.evfleet.core.plan.UnassignedTrip> before = new java.util.HashMap<>();
+        r.before().unassigned().forEach(u -> before.put(u.tripId(), u));
+        assertThat(r.after().unassigned()).filteredOn(u -> before.containsKey(u.tripId()))
+                .isNotEmpty().allMatch(u -> u.equals(before.get(u.tripId())));
+    }
+
+    @Test
+    void aChargingCabThatWouldStillEndBelowTheFloorLeavesService() {
+        List<String> cabs = new ArrayList<>(plan.timelines().keySet());
+        cabs.sort(Comparator.naturalOrder());
+        int stranded = 0;
+        for (String cab : cabs) {
+            for (Activity a : plan.timeline(cab)) {
+                if (!(a instanceof ChargingSession c) || c.end() - c.start() < 3) continue;
+                int now = c.start() + 1;
+                Replanner.Result r = replanner.onDrift(scenario, plan,
+                        new Replanner.DriftEvent(cab, now, scenario.vehiclesById().get(cab).batteryKWh() * 0.01));
+                assertThat(r.report().violations()).as("%s at %d", cab, now).isEmpty();
+                if (r.strandedCab() != null) stranded++;
+            }
+        }
+        assertThat(stranded).isPositive();
+    }
+
     /** A cab with at least two trips still to start after {@code now}. */
     private static String cabWithWorkAhead(int now) {
         return plan.timelines().entrySet().stream()
