@@ -49,6 +49,10 @@ public class ShiftService {
     }
 
     /** What an employee may see: their own trip and nothing about anyone else. */
+    private static final long STARTUP_WAIT_MILLIS = TimeUnit.MINUTES.toMillis(10);
+    /** Share of the timeout for planning, leaving time to validate and publish before it runs out. */
+    private static final double PLANNING_SHARE = 0.8;
+
     public record Overnight(double targetPercent, int cabsCharged, double energyKWh, double costRupees, String lastFinish,
                             List<String> notReady, boolean valid) {
     }
@@ -89,6 +93,18 @@ public class ShiftService {
      * events have been applied, a fresh plan would overwrite what really happened, so it is refused.
      */
     public Summary plan(String tenant, long shiftId) {
+        return plan(tenant, shiftId, timeoutMillis);
+    }
+
+    /**
+     * Plans with a long wait, for startup: on a slow machine the planner still stops improving at its
+     * normal budget, but even a very slow first run must not stop the application from starting.
+     */
+    public Summary planAtStartup(String tenant, long shiftId) {
+        return plan(tenant, shiftId, STARTUP_WAIT_MILLIS);
+    }
+
+    public Summary plan(String tenant, long shiftId, long waitMillis) {
         Shift shift = find(tenant, shiftId);
         if (shift.getCurrentVersion() > 0 && !INITIAL.equals(store.row(shift).getCause())) {
             throw new ApiException(HttpStatus.CONFLICT, "SHIFT_IS_LIVE", "Live events were applied; the plan can only be repaired now");
@@ -96,7 +112,7 @@ public class ShiftService {
         int seenVersion = shift.getCurrentVersion();
         long t0 = System.nanoTime();
         Scenario scenario = new ScenarioGenerator().generate(params(shift));
-        Plan plan = planWithinTimeout(scenario);
+        Plan plan = planWithinTimeout(shiftId, scenario, waitMillis);
         long millis = (System.nanoTime() - t0) / 1_000_000;
         metrics.planLatency().record(millis, TimeUnit.MILLISECONDS);
 
@@ -121,10 +137,16 @@ public class ShiftService {
         return summary(tenant, shiftId);
     }
 
-    private Plan planWithinTimeout(Scenario scenario) {
-        Future<Plan> run = plannerThreads.submit(() -> MultiStartPlanner.standard().planAndImprove(scenario));
+    private Plan planWithinTimeout(long shiftId, Scenario scenario, long waitMillis) {
+        long budget = (long) (timeoutMillis * PLANNING_SHARE);
+        Future<MultiStartPlanner.TimedPlan> run = plannerThreads.submit(() -> MultiStartPlanner.standard().planWithin(scenario, budget));
         try {
-            return run.get(timeoutMillis, TimeUnit.MILLISECONDS);
+            MultiStartPlanner.TimedPlan timed = run.get(waitMillis, TimeUnit.MILLISECONDS);
+            if (timed.runsFinished() < timed.runsTotal()) {
+                log.warn("shift {}: slow machine, used {} of {} planner runs and {} search steps", shiftId,
+                        timed.runsFinished(), timed.runsTotal(), timed.searchSteps());
+            }
+            return timed.plan();
         } catch (TimeoutException e) {
             run.cancel(true);
             metrics.plannerTimeout();

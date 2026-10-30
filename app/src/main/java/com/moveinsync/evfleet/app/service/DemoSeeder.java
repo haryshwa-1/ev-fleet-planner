@@ -55,9 +55,9 @@ public class DemoSeeder implements ApplicationRunner {
         users.save(new AppUser("globex", "admin@globex", hash, Role.ADMIN, null));
 
         Shift acme = shifts.create("acme", ScenarioGenerator.Params.standard());
-        shifts.plan("acme", acme.getId());
+        shifts.planAtStartup("acme", acme.getId());
         Shift globex = shifts.create("globex", new ScenarioGenerator.Params(30, 2, 2, 100, 7L));
-        shifts.plan("globex", globex.getId());
+        shifts.planAtStartup("globex", globex.getId());
         log.info("demo data ready: acme shift {}, globex shift {}", acme.getId(), globex.getId());
     }
 }

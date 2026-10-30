@@ -319,6 +319,19 @@ class ApiTest {
     // ---- failure handling and operations
 
     @Test
+    void startupPlanningOutlivesTheNormalTimeout() throws Exception {
+        long id = read(send("/admin/shifts", admin, Map.of("cabs", 40, "hubs", 2, "chargersPerHub", 4, "trips", 200, "seed", 8))
+                .andExpect(status().is2xxSuccessful())).get("shiftId").asLong();
+        ReflectionTestUtils.setField(shiftService, "timeoutMillis", 1L);
+        try {
+            shiftService.planAtStartup("acme", id);
+        } finally {
+            ReflectionTestUtils.setField(shiftService, "timeoutMillis", 30_000L);
+        }
+        fetch("/shifts/" + id + "/plan/validate", admin).andExpect(jsonPath("$.valid").value(true));
+    }
+
+    @Test
     void aPlannerTimeoutKeepsThePreviousPlan() throws Exception {
         ReflectionTestUtils.setField(shiftService, "timeoutMillis", 1L);
         try {
