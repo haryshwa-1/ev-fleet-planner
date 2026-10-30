@@ -21,6 +21,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
 import java.util.Optional;
@@ -135,22 +137,36 @@ public class EventService {
             PlanState next = state.after(r);
             int lowerBound = store.row(shift).getLowerBound();
             int version = store.publish(shift, next, cause, lowerBound, r.millis());
-            metrics.event(type, "applied");
-            metrics.unassigned(next.backupTrips());
+            afterCommit(() -> {
+                metrics.event(type, "applied");
+                metrics.unassigned(next.backupTrips());
+                if (r.strandedCab() != null) metrics.cabStranded();
+            });
             result = result(Outcome.APPLIED, version, minute, r);
             if (r.strandedCab() != null) {
-                metrics.cabStranded();
                 log.warn("shift {}: {} is stranded and out of service, dispatch must rescue it", shift.getId(), r.strandedCab());
             }
             log.info("shift {} v{}: {} -> {} in {} ms", shift.getId(), version, cause, r.diff().summary(), r.millis());
         } else {
-            metrics.event(type, "rejected");
-            metrics.validatorFailure();
+            afterCommit(() -> {
+                metrics.event(type, "rejected");
+                metrics.validatorFailure();
+            });
             result = result(Outcome.REJECTED, shift.getCurrentVersion(), minute, r);
             log.warn("shift {}: repair for {} rejected: {}", shift.getId(), cause, r.report().summary());
         }
         processed.save(new ProcessedEvent(shift.getId(), key, fingerprint, write(result)));
         return result;
+    }
+
+    /** Counts only what really happened: a transaction that rolls back must not show up in the metrics. */
+    private static void afterCommit(Runnable action) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                action.run();
+            }
+        });
     }
 
     private static EventResult result(Outcome outcome, int version, int minute, Replanner.Result r) {

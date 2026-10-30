@@ -6,6 +6,7 @@ import com.moveinsync.evfleet.app.service.ShiftService;
 import com.moveinsync.evfleet.core.data.ScenarioGenerator;
 import com.moveinsync.evfleet.core.planner.Replanner;
 import com.moveinsync.evfleet.core.validate.ValidationReport;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,6 +36,8 @@ class FailureInjectionTest {
     ShiftService shifts;
     @Autowired
     ProcessedEventRepository processed;
+    @Autowired
+    MeterRegistry registry;
 
     long shift;
 
@@ -55,12 +58,17 @@ class FailureInjectionTest {
         ReflectionTestUtils.setField(service, field, value);
     }
 
+    private double applied() {
+        return registry.counter("events", "type", "soc", "outcome", "applied").count();
+    }
+
     private int version() {
         return shifts.summary("acme", shift).version();
     }
 
     @Test
     void aCrashBeforeCommitLeavesNothingAndTheSameKeyCanRetry() {
+        double appliedBefore = applied();
         ProcessedEventRepository broken = Mockito.mock(ProcessedEventRepository.class);
         Mockito.when(broken.findByShiftIdAndIdempotencyKey(any(), any())).thenReturn(Optional.empty());
         Mockito.when(broken.save(any())).thenThrow(new IllegalStateException("database lost mid-event"));
@@ -69,6 +77,7 @@ class FailureInjectionTest {
         assertThatThrownBy(() -> events.drift("acme", shift, "CAB-001", 40, "19:30", 1, "crash"))
                 .isInstanceOf(IllegalStateException.class);
         assertThat(version()).isEqualTo(1);
+        assertThat(applied()).isEqualTo(appliedBefore);
 
         target("processed", processed);
         EventService.EventResult retry = events.drift("acme", shift, "CAB-001", 40, "19:30", 1, "crash");
