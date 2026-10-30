@@ -1,0 +1,8 @@
+# Keep Unix scripts working when the repository is checked out on Windows, including inside Docker.
+* text=auto
+mvnw text eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf
+*.cmd text eol=crlf

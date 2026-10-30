@@ -13,6 +13,19 @@
     <artifactId>app</artifactId>
     <name>EV Fleet Planner Service</name>
 
+    <dependencyManagement>
+        <dependencies>
+            <!-- The same PostgreSQL version for tests on every operating system. -->
+            <dependency>
+                <groupId>io.zonky.test.postgres</groupId>
+                <artifactId>embedded-postgres-binaries-bom</artifactId>
+                <version>16.4.0</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
         <dependency>
             <groupId>com.moveinsync.evfleet</groupId>
@@ -73,10 +86,15 @@
             <version>2.1.0</version>
             <scope>test</scope>
         </dependency>
+        <!-- embedded-postgres brings Windows, Linux and Intel Mac binaries; these two add ARM. -->
         <dependency>
             <groupId>io.zonky.test.postgres</groupId>
             <artifactId>embedded-postgres-binaries-darwin-arm64v8</artifactId>
-            <version>16.4.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.zonky.test.postgres</groupId>
+            <artifactId>embedded-postgres-binaries-linux-arm64v8</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
