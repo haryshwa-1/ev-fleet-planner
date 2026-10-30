@@ -166,6 +166,28 @@ class ReplannerTest {
         assertThat(slowest).isLessThan(2_000);
     }
 
+    @Test
+    void nothingNewIsEverScheduledBeforeTheEventTime() {
+        Random rnd = new Random(23);
+        List<String> cabs = new ArrayList<>(scenario.vehiclesById().keySet());
+        cabs.sort(Comparator.naturalOrder());
+        for (int i = 0; i < 100; i++) {
+            int now = hm(17, 30) + rnd.nextInt(7 * 60);
+            String cab = cabs.get(rnd.nextInt(cabs.size()));
+            double wanted = scenario.vehiclesById().get(cab).batteryKWh() * (0.15 + rnd.nextDouble() * 0.8);
+            Replanner.Result r = replanner.onDrift(scenario, plan,
+                    new Replanner.DriftEvent(cab, now, Math.max(wanted, safeReport(cab, now))));
+
+            assertThat(r.report().violations()).as("event %d at %d", i, now).isEmpty();
+            r.after().timelines().forEach((id, timeline) -> {
+                // Only what the cab is in the middle of may have begun earlier; its charge may be corrected.
+                Activity current = r.snapshot().inProgress(id);
+                assertThat(timeline).as("%s at %d", id, now)
+                        .noneMatch(a -> a.start() < now && (current == null || a.start() != current.start()));
+            });
+        }
+    }
+
     /** A cab with at least two trips still to start after {@code now}. */
     private static String cabWithWorkAhead(int now) {
         return plan.timelines().entrySet().stream()

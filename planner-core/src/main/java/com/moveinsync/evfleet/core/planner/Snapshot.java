@@ -38,12 +38,13 @@ public record Snapshot(int minute, Scenario scenario, Plan plan, Map<String, Lis
             while (split < timeline.size() && timeline.get(split).end() <= minute) split++;
             List<Activity> done = timeline.subList(0, split);
             List<Activity> left = timeline.subList(split, timeline.size());
-            if (done.isEmpty()) {
-                vehicles.add(v);
-            } else {
-                Activity last = done.get(done.size() - 1);
-                vehicles.add(v.withState(last.socEndKWh(), last.to(), last.end()));
-            }
+            Activity last = done.isEmpty() ? null : done.get(done.size() - 1);
+            double soc = last == null ? v.initialSocKWh() : last.socEndKWh();
+            int free = last == null ? v.availableFrom() : last.end();
+            // A cab with nothing in progress is parked now, so it cannot leave any earlier than now.
+            boolean inProgress = !left.isEmpty() && left.get(0).start() < minute;
+            if (!inProgress) free = Math.max(free, minute);
+            vehicles.add(v.withState(soc, last == null ? v.location() : last.to(), free));
             history.put(v.id(), List.copyOf(done));
             rest.put(v.id(), List.copyOf(left));
             for (Activity a : left) if (a instanceof TripLeg leg) tripsLeft.add(leg.tripId());
