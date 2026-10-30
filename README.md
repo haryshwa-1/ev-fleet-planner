@@ -96,11 +96,22 @@ plan for the rest of the shift:
 
 ## Run the service
 
-Requires only Docker. The first build downloads dependencies and takes several minutes.
+Requires only Docker, and works the same on macOS, Windows and Linux. The first build downloads dependencies and takes
+several minutes.
+
+| OS | Install | Terminal |
+|---|---|---|
+| macOS | [Docker Desktop](https://docs.docker.com/desktop/setup/install/mac-install/) | Terminal |
+| Windows | [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/) with the WSL 2 backend | PowerShell |
+| Linux | [Docker Engine](https://docs.docker.com/engine/install/) and the Compose plugin | Your shell; add `sudo` if your user is not in the `docker` group |
+
+Give Docker at least 4 CPUs and 4 GB of memory. Then, from the project folder:
 
 ```bash
 docker compose up --build
 ```
+
+To stop it, press Ctrl+C. To also remove the data, run `docker compose down -v`.
 
 This starts PostgreSQL and the API on `localhost:8080`, and seeds two demo tenants: `acme` with the planned
 300-cab shift (id 1) and `globex` with a small one (id 2). Users are `admin@acme`, `operator@acme`,
@@ -117,6 +128,20 @@ curl -s localhost:8080/shifts/1/plan/summary -H "Authorization: Bearer $TOKEN"
 curl -s localhost:8080/shifts/1/events/soc -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
   -d '{"cabId":"CAB-007","socPercent":22,"observedAt":"19:30","seq":1,"idempotencyKey":"demo-1"}'
 ```
+
+The same calls in Windows PowerShell:
+
+```powershell
+$login = Invoke-RestMethod -Method Post http://localhost:8080/auth/login -ContentType application/json -Body '{"username":"operator@acme","password":"demo-password"}'
+$headers = @{ Authorization = "Bearer $($login.token)" }
+
+Invoke-RestMethod http://localhost:8080/shifts/1/plan/summary -Headers $headers
+
+Invoke-RestMethod -Method Post http://localhost:8080/shifts/1/events/soc -Headers $headers -ContentType application/json -Body '{"cabId":"CAB-007","socPercent":22,"observedAt":"19:30","seq":1,"idempotencyKey":"demo-1"}'
+```
+
+The Postman collection in `postman/` works on every OS. `scripts/demo.sh` needs bash, curl and Python, so on Windows run
+it from Git Bash or WSL. For the load test, use `python scripts/load_test.py` on Windows.
 
 | Endpoint | Role | Purpose |
 |---|---|---|
@@ -163,13 +188,26 @@ event and checks that nothing was kept and the same key can retry. Late events a
 
 ## Run the engine alone
 
-Requires Java 21+. The Maven wrapper is included, so Maven does not need to be installed.
+Requires [Java 21+](https://adoptium.net/). The Maven wrapper is included, so Maven does not need to be installed. Tests
+start their own PostgreSQL, so they need no Docker.
+
+macOS and Linux:
 
 ```bash
-./mvnw test                                                   # 115 tests
+./mvnw test                                                   # 121 tests
 ./mvnw -q -DskipTests install
 ./mvnw -q -pl planner-core exec:java -Dexec.args="--timeline CAB-007"
 ```
+
+Windows PowerShell (the quotes around `-D` options are required):
+
+```powershell
+.\mvnw.cmd test
+.\mvnw.cmd -q -DskipTests install
+.\mvnw.cmd -q -pl planner-core exec:java "-Dexec.args=--timeline CAB-007"
+```
+
+On Linux, run the tests as a normal user: PostgreSQL refuses to start as root.
 
 Output files are written to `out/` (`plan.json`, `validator-report.json`, `summary.json`).
 Scenario options: `--cabs`, `--hubs`, `--chargers-per-hub`, `--trips`, `--seed`. Passing any planner knob
