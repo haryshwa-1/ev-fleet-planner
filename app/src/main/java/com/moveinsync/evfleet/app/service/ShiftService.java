@@ -75,8 +75,8 @@ public class ShiftService {
         this.timeoutMillis = timeoutMillis;
     }
 
-    public boolean lastShiftIsPlanned(String tenant) {
-        return shifts.findFirstByTenantIdOrderByIdDesc(tenant).filter(s -> s.getCurrentVersion() > 0).isPresent();
+    public boolean firstShiftIsPlanned(String tenant) {
+        return shifts.findFirstByTenantIdOrderByIdAsc(tenant).filter(s -> s.getCurrentVersion() > 0).isPresent();
     }
 
     public Shift create(String tenant, ScenarioGenerator.Params p) {
@@ -177,10 +177,11 @@ public class ShiftService {
         return versions.history(find(tenant, shiftId).getId());
     }
 
-    /** The employee's trip in their tenant's latest shift. */
+    /** The employee's trip in their tenant's latest planned shift. */
     public MyTrip myTrip(String tenant, String tripId) {
         if (tripId == null) throw ApiException.notFound("Trip");
-        Shift shift = shifts.findFirstByTenantIdOrderByIdDesc(tenant).orElseThrow(() -> ApiException.notFound("Trip"));
+        Shift shift = shifts.findFirstByTenantIdAndCurrentVersionGreaterThanOrderByIdDesc(tenant, 0)
+                .orElseThrow(() -> ApiException.notFound("Trip"));
         PlanState state = store.current(shift);
         for (Map.Entry<String, List<Activity>> cab : state.plan().timelines().entrySet()) {
             for (Activity a : cab.getValue()) {

@@ -128,9 +128,11 @@ public class EventService {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "EVENT_TIME_AFTER_SHIFT", "This time is after the end of the shift");
         }
         int minute = Math.max(observed, state.asOfMinute());
-        metrics.eventLag(minute - observed);
         Replanner.Result r = replan.apply(state.scenario(), minute);
-        metrics.replanLatency().record(java.time.Duration.ofMillis(r.millis()));
+        afterCommit(() -> {
+            metrics.eventLag(minute - observed);
+            metrics.replanLatency().record(java.time.Duration.ofMillis(r.millis()));
+        });
 
         EventResult result;
         if (r.report().valid()) {
@@ -187,7 +189,10 @@ public class EventService {
             metrics.event(type, "key_reused");
             throw new ApiException(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_REUSED", "This key was already used for a different event");
         }
-        seen.ifPresent(x -> metrics.event(type, "duplicate"));
+        seen.ifPresent(x -> {
+            metrics.event(type, "duplicate");
+            metrics.eventRetried();
+        });
         return seen.map(p -> read(p.getResponse()).asDuplicate());
     }
 

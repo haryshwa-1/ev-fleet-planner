@@ -42,6 +42,8 @@ class ApiTest {
     ObjectMapper json;
     @Autowired
     ShiftService shiftService;
+    @Autowired
+    com.moveinsync.evfleet.app.service.DemoSeeder seeder;
 
     String admin;
     String operator;
@@ -231,6 +233,42 @@ class ApiTest {
     }
 
     @Test
+    void anUnplannedNewShiftChangesNothingForEmployeesOrARestart() throws Exception {
+        send("/admin/shifts", admin, Map.of("cabs", 10, "hubs", 1, "chargersPerHub", 2, "trips", 20, "seed", 9))
+                .andExpect(status().is2xxSuccessful());
+        send("/admin/shifts", otherTenant, Map.of("cabs", 10, "hubs", 1, "chargersPerHub", 2, "trips", 20, "seed", 9))
+                .andExpect(status().is2xxSuccessful());
+        fetch("/me/trip", employee).andExpect(status().isOk()).andExpect(jsonPath("$.tripId").value("T-0001"));
+        seeder.run(null); // what a restart does; must not treat the unplanned shift as a failed seed
+    }
+
+    @Test
+    void historyAndBackupTripsSurviveEventsAcrossTheShift() throws Exception {
+        List<String> finishedEarly = new ArrayList<>();
+        for (int n = 1; n <= 20; n++) finishedEarly.addAll(tripsEndingBefore(n, 18 * 60 + 30));
+        assertThat(finishedEarly).isNotEmpty();
+
+        drift(soc("CAB-005", 60, "18:30", 1, "chain-1")).andExpect(status().isOk());
+        drift(soc("CAB-009", 60, "21:00", 1, "chain-2")).andExpect(status().isOk());
+        drift(soc("CAB-012", 60, "23:30", 1, "chain-3")).andExpect(status().isOk());
+
+        JsonNode s = read(fetch("/shifts/" + shift + "/plan/summary", operator));
+        assertThat(s.get("backupTrips").asLong()).isPositive();
+        assertThat(s.get("electricTrips").asLong() + s.get("backupTrips").asLong()).isEqualTo(s.get("totalTrips").asLong());
+        List<String> stillThere = new ArrayList<>();
+        for (int n = 1; n <= 20; n++) stillThere.addAll(tripsEndingBefore(n, 18 * 60 + 30));
+        assertThat(stillThere).isEqualTo(finishedEarly);
+    }
+
+    private List<String> tripsEndingBefore(int cab, int minute) throws Exception {
+        List<String> trips = new ArrayList<>();
+        for (JsonNode a : read(fetch("/shifts/" + shift + "/cabs/" + String.format("CAB-%03d", cab) + "/timeline", operator))) {
+            if ("TRIP".equals(a.get("type").asText()) && a.get("end").asInt() < minute) trips.add(a.get("tripId").asText());
+        }
+        return trips;
+    }
+
+    @Test
     void aFreshPlanCannotOverwriteALiveShift() throws Exception {
         drift(soc("CAB-005", 40, "19:30", 1, "live")).andExpect(status().isOk());
         send("/shifts/" + shift + "/plan", admin, Map.of()).andExpect(status().isConflict())
@@ -298,6 +336,8 @@ class ApiTest {
         String body = drift(Map.of("cabId", "CAB-001", "socPercent", 500, "observedAt", "19:30", "seq", 1, "idempotencyKey", "bad"))
                 .andExpect(status().isBadRequest()).andReturn().getResponse().getContentAsString();
         assertThat(body).doesNotContain("Exception", "at com.");
+        assertThat(json.readTree(body).get("code").asText()).isEqualTo("BAD_REQUEST");
+        fetch("/no/such/route", operator).andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("NOT_FOUND"));
         drift(soc("CAB-001", 50, "not-a-time", 1, "bad-time")).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("BAD_TIME"));
         drift(soc("NO-SUCH-CAB", 50, "19:30", 1, "no-cab")).andExpect(status().isNotFound());
@@ -310,6 +350,7 @@ class ApiTest {
                 .andExpect(header().string("X-Correlation-Id", "abc-123"));
         String prometheus = mvc.perform(get("/actuator/prometheus")).andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        assertThat(prometheus).contains("replan_latency_seconds", "events_total", "unassigned_trips");
+        assertThat(prometheus).contains("replan_latency_seconds", "events_total", "unassigned_trips",
+                "event_lag_minutes", "events_in_flight", "events_retries_total", "http_server_requests_seconds");
     }
 }

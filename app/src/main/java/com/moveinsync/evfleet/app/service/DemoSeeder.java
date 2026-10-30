@@ -42,7 +42,7 @@ public class DemoSeeder implements ApplicationRunner {
     public void run(ApplicationArguments args) {
         if (tenants.count() > 0) {
             // globex is planned last, so without its plan an earlier start failed partway through.
-            boolean complete = shifts.lastShiftIsPlanned("globex");
+            boolean complete = shifts.firstShiftIsPlanned("globex");
             if (!complete) throw new IllegalStateException("Demo data is incomplete from a failed start; reset the database");
             return;
         }

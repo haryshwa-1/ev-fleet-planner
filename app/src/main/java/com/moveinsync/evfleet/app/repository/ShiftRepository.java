@@ -15,6 +15,10 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
 
     Optional<Shift> findFirstByTenantIdOrderByIdDesc(String tenantId);
 
+    Optional<Shift> findFirstByTenantIdOrderByIdAsc(String tenantId);
+
+    Optional<Shift> findFirstByTenantIdAndCurrentVersionGreaterThanOrderByIdDesc(String tenantId, int version);
+
     /** Takes the shift's row lock: the single-writer guarantee, also across app instances. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select s from Shift s where s.id = :id and s.tenantId = :tenantId")
