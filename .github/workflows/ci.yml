@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Run tests (Windows)
+        if: runner.os == 'Windows'
+        run: .\mvnw.cmd -B test
+      - name: Run tests (macOS and Linux)
+        if: runner.os != 'Windows'
+        run: ./mvnw -B test
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start everything with one command
+        run: docker compose up --build -d --wait
+      - name: Check the plan through the API
+        run: |
+          TOKEN=$(curl -sf localhost:8080/auth/login -H 'content-type: application/json' -d '{"username":"operator@acme","password":"demo-password"}' | jq -r .token)
+          curl -sf localhost:8080/shifts/1/plan/validate -H "Authorization: Bearer $TOKEN" | jq -e .valid
