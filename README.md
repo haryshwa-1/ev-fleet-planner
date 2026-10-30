@@ -5,13 +5,13 @@ and when and where each cab charges — without any cab running below its batter
 exceeding its chargers, or any trip finishing late. Trips no EV can cover go to backup cabs with a reason.
 
 > Status: the planning engine, live re-planning and the Spring Boot service are complete and tested.
-> The full design write-up and benchmark are in progress.
+> See [DESIGN.md](DESIGN.md) for architecture, failure modes and trade-offs, and [BENCHMARK.md](BENCHMARK.md) for measurements.
 
 ## Results (300 cabs, 5 hubs / 40 chargers, 1,500 trips, seed 42)
 
 | | |
 |---|---|
-| Planning time | ~5.5 s for 16 parallel greedy runs on 8 cores (target: under 30 s) |
+| Planning time | ~5.8 s for 16 parallel greedy runs on 8 cores (target: under 30 s) |
 | Independent validator | VALID — 36,191 checks, 0 violations, lowest SoC 15.2% (floor 15%) |
 | Coverage | 1,446 trips by EV, 54 to backup (96.4%) |
 | Proven lower bound | any plan needs ≥ 46 backup trips, so this plan is at most 8 trips from optimal |

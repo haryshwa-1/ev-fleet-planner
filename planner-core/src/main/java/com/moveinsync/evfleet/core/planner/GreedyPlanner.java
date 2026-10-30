@@ -20,7 +20,7 @@ import java.util.Map;
  * <p>Complexity: O(T log T + T x V x (1 + H x C x log S)) where T trips, V cabs, H hubs tried
  * per cab, C chargers per hub, S bookings per charger. The charge branch only runs for cabs
  * that cannot serve directly or would end low, so in practice it is close to O(T x V).
- * Memory: O(V + T + S).
+ * Memory: O(V + T + S + L x H) with L distinct locations, whose hubs are kept sorted by distance.
  */
 public final class GreedyPlanner {
 

@@ -14,7 +14,9 @@ import com.moveinsync.evfleet.core.plan.TripLeg;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Works out whether a cab can serve a trip next, either directly or by charging first, and
@@ -39,6 +41,7 @@ public final class InsertionEvaluator {
     private final Tariff tariff;
     private final PlannerConfig config;
     private final List<Hub> hubs;
+    private final Map<Location, List<Hub>> hubsByDistance = new HashMap<>();
 
     public InsertionEvaluator(Scenario scenario, PlannerConfig config) {
         this.scenario = scenario;
@@ -54,11 +57,13 @@ public final class InsertionEvaluator {
 
     /** Energy to the nearest hub from {@code at}, assuming the worst traffic. */
     public double reserveKWh(Vehicle v, Location at) {
-        double best = Double.MAX_VALUE;
-        for (Hub h : hubs) {
-            best = Math.min(best, physics.worstCaseDriveEnergyKWh(v, physics.geo().roadKm(at, h.location())));
-        }
-        return best;
+        return physics.worstCaseDriveEnergyKWh(v, physics.geo().roadKm(at, nearestHubs(at).get(0).location()));
+    }
+
+    /** All hubs, nearest first. Cabs revisit the same few places, so each location is sorted only once. */
+    private List<Hub> nearestHubs(Location at) {
+        return hubsByDistance.computeIfAbsent(at, l -> hubs.stream()
+                .sorted(Comparator.comparingDouble(h -> physics.geo().roadKm(l, h.location()))).toList());
     }
 
     /** True if even a full battery cannot do this trip and still reach a charger. */
@@ -70,6 +75,7 @@ public final class InsertionEvaluator {
     /** Best option for this cab, or null. Updates {@code diag} with why it failed. */
     public Insertion evaluate(CabState cab, Trip trip, ChargerBook book, Diagnosis diag) {
         Insertion direct = direct(cab, trip, diag);
+        if (direct == null && cab.freeAt() > trip.startTime()) return null; // already too late to charge first
         boolean wantsCharge = direct == null || direct.socAfterKWh() < cab.vehicle().batteryKWh() * config.lowSocFraction();
         if (!wantsCharge) return direct;
         Insertion viaHub = chargeThenServe(cab, trip, book, diag);
@@ -112,9 +118,7 @@ public final class InsertionEvaluator {
         double afterTripNeed = floor + reserveKWh(v, trip.end());
         Insertion best = null;
 
-        List<Hub> nearest = hubs.stream()
-                .sorted(Comparator.comparingDouble(h -> physics.geo().roadKm(cab.location(), h.location())))
-                .limit(config.hubsToTry()).toList();
+        List<Hub> nearest = nearestHubs(cab.location()).subList(0, Math.min(config.hubsToTry(), hubs.size()));
         for (Hub hub : nearest) {
             int depart = cab.freeAt();
             double toHubKm = physics.geo().roadKm(cab.location(), hub.location());
@@ -127,6 +131,7 @@ public final class InsertionEvaluator {
             double required = afterTripNeed + tripEnergy + physics.worstCaseDriveEnergyKWh(v, toPickupKm);
             if (required > v.batteryKWh()) continue;
             diag.anyReachable |= arriveHub <= leaveBy;
+            if (arriveHub > leaveBy) continue;
 
             for (ChargerSchedule schedule : book.atHub(hub.id())) {
                 double power = physics.chargePowerKW(v, schedule.charger());

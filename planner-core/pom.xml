@@ -13,6 +13,10 @@
     <artifactId>planner-core</artifactId>
     <name>planner-core (pure Java, no framework)</name>
 
+    <properties>
+        <exec.mainClass>com.moveinsync.evfleet.core.cli.PlannerCli</exec.mainClass>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
@@ -35,9 +39,6 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
-                <configuration>
-                    <mainClass>com.moveinsync.evfleet.core.cli.PlannerCli</mainClass>
-                </configuration>
             </plugin>
         </plugins>
     </build>
