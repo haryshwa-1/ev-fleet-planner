@@ -188,6 +188,45 @@ class ReplannerTest {
         }
     }
 
+    @Test
+    void aCabThatCannotFinishItsTripLeavesServiceAndTheRestStaysValid() {
+        int now = hm(19, 30);
+        String cab = plan.timelines().entrySet().stream()
+                .filter(e -> e.getValue().stream().anyMatch(a -> a instanceof TripLeg && a.start() < now && a.end() > now + 2))
+                .filter(e -> e.getValue().stream().filter(a -> a instanceof TripLeg && a.start() >= now).count() >= 2)
+                .map(Map.Entry::getKey).sorted().findFirst().orElseThrow();
+        TripLeg current = (TripLeg) Snapshot.of(scenario, plan, now).inProgress(cab);
+        double reported = scenario.vehiclesById().get(cab).batteryKWh() * 0.01;
+
+        Replanner.Result r = replanner.onDrift(scenario, plan, new Replanner.DriftEvent(cab, now, reported));
+
+        assertThat(r.strandedCab()).isEqualTo(cab);
+        assertThat(r.report().violations()).isEmpty();
+        assertThat(r.after().timeline(cab)).isEmpty();
+        assertThat(r.after().unassigned()).anyMatch(u -> u.tripId().equals(current.tripId())
+                && u.reason() == com.moveinsync.evfleet.core.plan.ReasonCode.CAB_STRANDED);
+
+        // Later events on the repaired plan stay valid, and the stranded cab is never used again.
+        String other = plan.timelines().keySet().stream().sorted().filter(id -> !id.equals(cab)).findFirst().orElseThrow();
+        Replanner.Result next = replanner.onDrift(r.snapshot().scenario(), r.after(),
+                new Replanner.DriftEvent(other, now + 30, scenario.vehiclesById().get(other).batteryKWh() * 0.5));
+        assertThat(next.report().violations()).isEmpty();
+        assertThat(next.after().timeline(cab)).isEmpty();
+    }
+
+    @Test
+    void aParkedCabBelowTheFloorLeavesServiceToo() {
+        int now = hm(19, 30);
+        String cab = plan.timelines().keySet().stream().sorted()
+                .filter(id -> Snapshot.of(scenario, plan, now).inProgress(id) == null)
+                .findFirst().orElseThrow();
+        Replanner.Result r = replanner.onDrift(scenario, plan,
+                new Replanner.DriftEvent(cab, now, scenario.vehiclesById().get(cab).batteryKWh() * 0.10));
+        assertThat(r.strandedCab()).isEqualTo(cab);
+        assertThat(r.report().violations()).isEmpty();
+        assertThat(r.after().timeline(cab)).isEmpty();
+    }
+
     /** A cab with at least two trips still to start after {@code now}. */
     private static String cabWithWorkAhead(int now) {
         return plan.timelines().entrySet().stream()

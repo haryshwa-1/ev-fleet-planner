@@ -10,6 +10,7 @@ import com.moveinsync.evfleet.core.plan.Activity;
 import com.moveinsync.evfleet.core.plan.ChargingSession;
 import com.moveinsync.evfleet.core.plan.Deadhead;
 import com.moveinsync.evfleet.core.plan.Plan;
+import com.moveinsync.evfleet.core.plan.ReasonCode;
 import com.moveinsync.evfleet.core.plan.TripLeg;
 import com.moveinsync.evfleet.core.plan.UnassignedTrip;
 import com.moveinsync.evfleet.core.validate.PlanValidator;
@@ -49,9 +50,10 @@ public final class Replanner {
      * @param before   the snapshot's plan, judged against the changed situation (usually not valid)
      * @param after    the repaired plan for the rest of the shift
      * @param report   the validator's verdict on {@code after}
+     * @param strandedCab the cab this event took out of service, or null
      */
     public record Result(Snapshot snapshot, Plan before, Plan after, PlanDiff diff, ValidationReport report,
-                         int neighbourhood, long millis) {}
+                         int neighbourhood, long millis, String strandedCab) {}
 
     private static final int[] NEIGHBOURHOODS = {10, 40};
 
@@ -78,6 +80,9 @@ public final class Replanner {
         Activity current = snap.inProgress(e.cabId());
         double plannedNow = current == null ? v.initialSocKWh() : socAt(current, e.minute());
         double corrected = clamp(v.initialSocKWh() + (e.socKWh() - plannedNow), 0, v.batteryKWh());
+        if (isStranded(current, corrected, e.socKWh(), scenario.physics().floorKWh(v))) {
+            return strand(snap, v, current, e, t0);
+        }
         Vehicle actual = v.withSoc(corrected);
         List<Vehicle> vehicles = snap.scenario().vehicles().stream()
                 .map(x -> x.id().equals(e.cabId()) ? actual : x).toList();
@@ -87,7 +92,32 @@ public final class Replanner {
         Map<String, List<Activity>> frozen = new HashMap<>();
         frozen.put(e.cabId(), current == null ? List.of() : List.of(replay(current, corrected, actual, evaluator)));
         Location focus = current == null ? actual.location() : current.to();
-        return repair(changed, frozen, focus, t0);
+        return repair(changed, frozen, focus, t0, List.of(), null);
+    }
+
+    /** True if the cab cannot legally finish what it is doing, or cannot move at all if it is parked. */
+    private static boolean isStranded(Activity current, double startSoc, double reported, double floor) {
+        if (current == null) return reported < floor;
+        if (current instanceof ChargingSession) return false;
+        return startSoc - (current.socStartKWh() - current.socEndKWh()) < floor;
+    }
+
+    /**
+     * No plan can make a stranded cab finish, so it leaves service for the rest of the shift: the trip
+     * it was on goes to a backup cab, and its later trips are re-planned onto other cabs like any others.
+     */
+    private Result strand(Snapshot snap, Vehicle v, Activity current, DriftEvent e, long t0) {
+        Location where = current == null ? v.location() : current.from();
+        Vehicle out = v.withState(clamp(e.socKWh(), 0, v.batteryKWh()), where, snap.scenario().shiftEnd());
+        List<Vehicle> vehicles = snap.scenario().vehicles().stream()
+                .map(x -> x.id().equals(e.cabId()) ? out : x).toList();
+        Snapshot changed = snap.withScenario(snap.scenario().withVehicles(vehicles));
+        List<UnassignedTrip> abandoned = current instanceof TripLeg leg
+                ? List.of(new UnassignedTrip(leg.tripId(), ReasonCode.CAB_STRANDED, e.cabId() + " ran out of charge during this trip"))
+                : List.of();
+        Map<String, List<Activity>> frozen = new HashMap<>();
+        frozen.put(e.cabId(), List.of());
+        return repair(changed, frozen, where, t0, abandoned, e.cabId());
     }
 
     public Result onChargerFailure(Scenario scenario, Plan plan, ChargerFailure e) {
@@ -118,28 +148,30 @@ public final class Replanner {
             }
         });
         Location focus = changed.scenario().hubsById().get(failed.hubId()).location();
-        return repair(changed, frozen, focus, t0);
+        return repair(changed, frozen, focus, t0, List.of(), null);
     }
 
     /**
      * Re-plans the cabs in {@code mustReplan} (keys: cab, values: what it keeps doing first) and
      * their neighbours; every other cab keeps its plan unchanged.
      */
-    private Result repair(Snapshot snap, Map<String, List<Activity>> mustReplan, Location focus, long t0) {
+    private Result repair(Snapshot snap, Map<String, List<Activity>> mustReplan, Location focus, long t0,
+                          List<UnassignedTrip> abandoned, String strandedCab) {
         Plan before = snap.plan();
         Result best = null;
         for (int size : NEIGHBOURHOODS) {
             if (best != null && (lostTrips(best) == 0 || elapsed(t0) > budgetMillis / 2)) break;
-            Plan after = pass(snap, mustReplan, neighbours(snap, mustReplan.keySet(), focus, size));
+            Plan after = pass(snap, mustReplan, neighbours(snap, mustReplan.keySet(), focus, size), abandoned);
             PlanDiff diff = PlanDiff.between(before, after);
-            Result r = new Result(snap, before, after, diff, null, size, 0);
+            Result r = new Result(snap, before, after, diff, null, size, 0, strandedCab);
             if (best == null || after.unassigned().size() < best.after().unassigned().size()) best = r;
         }
         ValidationReport report = new PlanValidator().validate(snap.scenario(), best.after());
-        return new Result(snap, before, best.after(), best.diff(), report, best.neighbourhood(), elapsed(t0));
+        return new Result(snap, before, best.after(), best.diff(), report, best.neighbourhood(), elapsed(t0), strandedCab);
     }
 
-    private Plan pass(Snapshot snap, Map<String, List<Activity>> mustReplan, Set<String> replanned) {
+    private Plan pass(Snapshot snap, Map<String, List<Activity>> mustReplan, Set<String> replanned,
+                      List<UnassignedTrip> abandoned) {
         Scenario scenario = snap.scenario();
         Plan before = snap.plan();
         InsertionEvaluator evaluator = new InsertionEvaluator(scenario, config);
@@ -183,7 +215,7 @@ public final class Replanner {
             if (cab != null) pending.computeIfAbsent(cab, k -> new java.util.ArrayDeque<>()).add(t);
         }
 
-        List<UnassignedTrip> unassigned = new ArrayList<>();
+        List<UnassignedTrip> unassigned = new ArrayList<>(abandoned);
         for (Trip trip : freed) {
             CabState original = states.get(owner.get(trip.id()));
             if (original != null) pending.get(original.id()).poll();

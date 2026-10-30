@@ -58,6 +58,10 @@ public class FleetMetrics {
         plannerTimeouts.increment();
     }
 
+    public void cabStranded() {
+        registry.counter("cabs.stranded").increment();
+    }
+
     public void unassigned(int trips) {
         unassignedTrips.set(trips);
     }

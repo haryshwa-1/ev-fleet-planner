@@ -12,6 +12,8 @@ public enum ReasonCode {
     INSUFFICIENT_CHARGE,
     /** A cab could have charged in time, but every charger at the usable hubs was booked. */
     CHARGER_CONGESTION,
+    /** The cab doing this trip ran out of charge on the way, so a backup cab must finish it. */
+    CAB_STRANDED,
     /** Live re-planning ran out of its time budget before finding an electric cab. */
     REPLAN_BUDGET_EXHAUSTED
 }

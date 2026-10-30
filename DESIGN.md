@@ -91,11 +91,12 @@ from 37 moved trips to 7, and one charger failure from 67 to 0.
 | Late event from another cab | Applied at the plan's current clock, which never goes backwards; lag recorded | Designed, metric exposed |
 | Concurrent events on one shift | Serialised by the row lock, also across instances | `ApiTest`, 50 events on one instance |
 | Charger fails | Running session cut short, its bookings moved, plan revalidated | `ReplannerTest`, `ApiTest` |
-| Repair fails validation | `422`, previous version stays live, rejection remembered | `ApiTest` |
+| Repair fails validation | `422`, previous version stays live, rejection remembered | `FailureInjectionTest` |
 | Planner exceeds its timeout | `503 PLANNER_TIMEOUT`, previous version stays live | `ApiTest` |
 | Fresh plan requested mid-shift | `409 SHIFT_IS_LIVE`, so real events are not overwritten | `ApiTest` |
-| Crash or database error during an event | Transaction rolls back, so version, sequence and response are all absent; the client retries with the same key | By design, not fault-injected |
-| Cab too empty to finish its current trip | Repair rejected, old plan stays; nothing alerts dispatch yet | `ApiTest` for the rejection |
+| Crash or database error during an event | Transaction rolls back, so version, sequence and response are all absent; the client retries with the same key | `FailureInjectionTest` breaks the save mid-event |
+| Cab too empty to finish its current trip | Cab leaves service for the rest of the shift, its current trip goes to backup, later trips move to other cabs; the response names the cab, and `cabs.stranded` and a warning log alert dispatch | `ReplannerTest`, `ApiTest` |
+| Event time after the shift ends, or a key reused for a different event | `422 EVENT_TIME_AFTER_SHIFT` or `409 IDEMPOTENCY_KEY_REUSED`, nothing changes | `ApiTest` |
 
 ## Trade-offs
 

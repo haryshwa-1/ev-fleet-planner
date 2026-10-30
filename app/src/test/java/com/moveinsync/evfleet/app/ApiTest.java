@@ -229,8 +229,8 @@ class ApiTest {
     }
 
     @Test
-    void aStrandedCabsRepairIsRejectedAndTheOldPlanStaysLive() throws Exception {
-        // Mid-trip at 1% the cab cannot finish what it is doing: no valid plan exists.
+    void aStrandedCabLeavesServiceAndDispatchIsTold() throws Exception {
+        // Mid-trip at 1% the cab cannot finish what it is doing.
         JsonNode timeline = read(fetch("/shifts/" + shift + "/cabs/CAB-005/timeline", operator));
         JsonNode trip = null;
         for (JsonNode a : timeline) if ("TRIP".equals(a.get("type").asText()) && a.get("end").asInt() - a.get("start").asInt() > 5) trip = a;
@@ -238,11 +238,13 @@ class ApiTest {
         int minute = trip.get("start").asInt() + 2;
         String at = String.format("%02d:%02d%s", minute % 1440 / 60, minute % 60, minute >= 1440 ? "+1" : "");
 
-        JsonNode r = read(drift(soc("CAB-005", 1, at, 1, "stranded")).andExpect(status().isUnprocessableEntity()));
-        assertThat(r.get("outcome").asText()).isEqualTo("REJECTED");
-        fetch("/shifts/" + shift + "/plan/summary", operator).andExpect(jsonPath("$.version").value(1));
-        // The rejection is remembered, so a retry gets the same answer.
-        drift(soc("CAB-005", 1, at, 1, "stranded")).andExpect(status().isUnprocessableEntity())
+        JsonNode r = read(drift(soc("CAB-005", 1, at, 1, "stranded")).andExpect(status().isOk()));
+        assertThat(r.get("outcome").asText()).isEqualTo("APPLIED");
+        assertThat(r.get("strandedCab").asText()).isEqualTo("CAB-005");
+        assertThat(r.get("tripsToBackup").asLong()).isPositive();
+        fetch("/shifts/" + shift + "/plan/validate", operator).andExpect(jsonPath("$.valid").value(true));
+        // The answer is remembered, so a retry gets the same one.
+        drift(soc("CAB-005", 1, at, 1, "stranded")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.duplicate").value(true));
     }
 

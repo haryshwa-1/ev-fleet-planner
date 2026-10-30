@@ -43,15 +43,16 @@ public class EventService {
     }
 
     /**
-     * @param duplicate true when this is the stored answer to an earlier event with the same key
+     * @param duplicate   true when this is the stored answer to an earlier event with the same key
+     * @param strandedCab the cab this event took out of service, which dispatch must rescue, or null
      */
     public record EventResult(Outcome outcome, boolean duplicate, int planVersion, String effectiveAt, int cabsChanged,
                               long tripsReassigned, long tripsToBackup, long tripsRescued, int sessionsAdded,
                               int sessionsRemoved, List<PlanDiff.TripChange> tripChanges, long replanMillis,
-                              String validator) {
+                              String validator, String strandedCab) {
         EventResult asDuplicate() {
             return new EventResult(outcome, true, planVersion, effectiveAt, cabsChanged, tripsReassigned, tripsToBackup,
-                    tripsRescued, sessionsAdded, sessionsRemoved, tripChanges, replanMillis, validator);
+                    tripsRescued, sessionsAdded, sessionsRemoved, tripChanges, replanMillis, validator, strandedCab);
         }
     }
 
@@ -137,6 +138,10 @@ public class EventService {
             metrics.event(type, "applied");
             metrics.unassigned(next.backupTrips());
             result = result(Outcome.APPLIED, version, minute, r);
+            if (r.strandedCab() != null) {
+                metrics.cabStranded();
+                log.warn("shift {}: {} is stranded and out of service, dispatch must rescue it", shift.getId(), r.strandedCab());
+            }
             log.info("shift {} v{}: {} -> {} in {} ms", shift.getId(), version, cause, r.diff().summary(), r.millis());
         } else {
             metrics.event(type, "rejected");
@@ -152,7 +157,7 @@ public class EventService {
         PlanDiff d = r.diff();
         return new EventResult(outcome, false, version, Clock.format(minute), d.cabsChanged().size(), d.reassigned(),
                 d.movedToBackup(), d.rescuedFromBackup(), d.sessionsAdded().size(), d.sessionsRemoved().size(),
-                d.tripChanges(), r.millis(), r.report().summary());
+                d.tripChanges(), r.millis(), r.report().summary(), r.strandedCab());
     }
 
     private Shift lock(String tenant, long shiftId) {
