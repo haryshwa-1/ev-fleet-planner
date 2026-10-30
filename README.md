@@ -164,8 +164,10 @@ How the service behaves under failure:
 - **Duplicates and ordering:** a repeated idempotency key replays the stored response; a sequence number not
   newer than the cab's last one gets `409 EVENT_OUT_OF_ORDER`. The same key on a different event gets
   `409 IDEMPOTENCY_KEY_REUSED`, and a time after the shift ends gets `422 EVENT_TIME_AFTER_SHIFT`.
-- **Validator as a gate:** a repair the validator rejects returns `422` and the previous version stays live. A planner
-  timeout returns `503` and keeps the last plan.
+- **Validator as a gate:** a repair the validator rejects returns `422` and the previous version stays live. On a slow
+  machine the planner stops at 80% of its 30 s limit and uses the best plan so far, with a warning in the logs, so results
+  can be slightly weaker there. It returns `503` and keeps the last plan only if not even one run finishes in time. At
+  startup it waits up to 10 minutes for that first run, so a slow machine still starts.
 - **Stranded cabs:** a cab too empty to finish what it is doing leaves service for the shift. Its current trip goes to a
   backup cab, its later trips move to other cabs, and the response, `cabs.stranded` and a warning log tell dispatch.
 - **Late events** take effect at the plan's current clock, which never goes backwards.
@@ -194,7 +196,7 @@ start their own PostgreSQL, so they need no Docker.
 macOS and Linux:
 
 ```bash
-./mvnw test                                                   # 121 tests
+./mvnw test                                                   # 125 tests
 ./mvnw -q -DskipTests install
 ./mvnw -q -pl planner-core exec:java -Dexec.args="--timeline CAB-007"
 ```

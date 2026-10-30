@@ -43,6 +43,8 @@ charging stop at one of its two nearest hubs. A cab accepts a trip only if it ca
 worst-case traffic, so no later step can strand it. 16 configurations run in parallel. Local search then improves the
 best plan: it clears the later work of 5 cabs near a backup trip and rebuilds it, keeping the result only if better. It
 runs a fixed 5,000 steps with a fixed seed, so results repeat, and it returns the original plan if the validator refuses.
+Planning has a time budget: past it, the planner uses the runs that finished and stops improving, so a slow machine gets
+a slightly weaker plan rather than none. Results only repeat exactly when the budget is not reached.
 
 **Backups against cost:** backups always come first. Plans are compared by fewest backups, then lowest cost including the
 overnight refill, so no saving can justify a lost trip at that level. Inside one greedy run, each insertion's score
@@ -107,7 +109,8 @@ keeps its exact steps, and a trip that must move prefers a cab that can still do
 | Charger fails | `200` with the diff | Running session cut short, bookings moved | `ReplannerTest`, `ApiTest` |
 | Cab too empty to finish, or still under the floor after charging | `200`, `strandedCab` set | Cab leaves service, its trip goes to backup, later trips move; metric and log alert dispatch | `ReplannerTest`, `ApiTest` |
 | Repair fails validation | `422` | Previous version stays live; rejection remembered | `FailureInjectionTest` |
-| Planner exceeds its timeout | `503 PLANNER_TIMEOUT` | Previous version stays live | `ApiTest` |
+| Slow machine, planner near its limit | `200`, plan may be slightly weaker | Uses the best plan so far; warning in the logs | `MultiStartPlannerBudgetTest` |
+| Not even one planner run finishes in time | `503 PLANNER_TIMEOUT`; startup waits up to 10 minutes instead | Previous version stays live; the run is cancelled | `ApiTest` |
 | Fresh plan requested mid-shift | `409 SHIFT_IS_LIVE` | Real events are not overwritten | `ApiTest` |
 
 ## Trade-offs
@@ -129,7 +132,7 @@ keeps its exact steps, and a trip that must move prefers a cab that can still do
 - Real fleet data: shifts come from a seeded generator, so testing other seeds says nothing about real demand.
 - Delay events: drift events report charge, so a cab running late does not trigger a re-plan.
 - Bringing a stranded cab back into service during the shift.
-- A hard deadline inside a re-plan, and stopping a timed-out planner: measured latency is far below the budget.
+- A hard deadline inside a re-plan: measured latency is far below the budget.
 - A fallback for a rejected charger failure: the repair only shortens or moves sessions, so it should not fail. If it did,
   the charger would stay marked as working, with the `422` and `validator.failures` showing it.
 - Checking event times within the shift: a mistyped future time before the shift ends still moves the clock.
