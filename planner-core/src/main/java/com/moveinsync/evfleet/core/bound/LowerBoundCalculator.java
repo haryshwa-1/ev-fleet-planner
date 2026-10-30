@@ -94,10 +94,7 @@ public final class LowerBoundCalculator {
 
         int chainExcess = ChainCoverBound.unservable(remaining, vehicles, physics);
 
-        double mustCharge = Math.max(0, demand - supply);
-        double costLb = mustCharge * scenario.tariff().cheapestRate();
         int bound = intrinsic + unreachable + Math.max(chainExcess, Math.max(concurrencyExcess, energyExcess));
-        return new LowerBound(intrinsic, unreachable, concurrencyExcess, peak, energyExcess, chainExcess, bound,
-                Math.round(costLb * 100) / 100.0);
+        return new LowerBound(intrinsic, unreachable, concurrencyExcess, peak, energyExcess, chainExcess, bound);
     }
 }

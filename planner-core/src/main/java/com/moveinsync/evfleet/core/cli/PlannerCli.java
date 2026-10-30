@@ -94,7 +94,6 @@ public final class PlannerCli {
                         + " -> gap <= %d trips%n", lb.unassignedLowerBound(), lb.intrinsicallyInfeasible(),
                 lb.unreachable(), lb.concurrencyExcess(), lb.peakConcurrentTrips(), lb.energyExcess(), lb.chainExcess(),
                 backup - lb.unassignedLowerBound());
-        System.out.printf("Charging cost lower bound (if every coverable trip is served): Rs %.2f%n", lb.costLowerBoundRupees());
         Map<ReasonCode, Long> reasons = plan.unassigned().stream()
                 .collect(Collectors.groupingBy(UnassignedTrip::reason, TreeMap::new, Collectors.counting()));
         System.out.println("Backup reasons: " + reasons);

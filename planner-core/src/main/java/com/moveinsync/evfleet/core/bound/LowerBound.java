@@ -8,8 +8,6 @@ package com.moveinsync.evfleet.core.bound;
  * @param concurrencyExcess       peak simultaneous trips minus fleet size
  * @param energyExcess            trips that must be dropped so total demand fits total possible supply
  * @param chainExcess             trips no matching of cab starts and earlier trips can precede (unlimited battery)
- * @param costLowerBoundRupees    cheapest possible charging bill for a plan that serves every trip not already
- *                                counted as impossible; a plan sending more trips to backup may charge less
  */
 public record LowerBound(
         int intrinsicallyInfeasible,
@@ -18,6 +16,5 @@ public record LowerBound(
         int peakConcurrentTrips,
         int energyExcess,
         int chainExcess,
-        int unassignedLowerBound,
-        double costLowerBoundRupees) {
+        int unassignedLowerBound) {
 }
