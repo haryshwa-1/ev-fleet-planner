@@ -23,6 +23,7 @@ public class AuthService {
     private final PasswordEncoder passwords;
     private final JwtEncoder encoder;
     private final Duration ttl;
+    private final String dummyHash;
 
     public AuthService(UserRepository users, PasswordEncoder passwords, JwtEncoder encoder,
                        @Value("${app.jwt.ttl-minutes}") long ttlMinutes) {
@@ -30,14 +31,17 @@ public class AuthService {
         this.passwords = passwords;
         this.encoder = encoder;
         this.ttl = Duration.ofMinutes(ttlMinutes);
+        this.dummyHash = passwords.encode("no-account-has-this-password");
     }
 
     public String login(String username, String password) {
-        // Same answer for an unknown user and a wrong password, so accounts cannot be discovered.
-        AppUser user = users.findByUsername(username)
-                .filter(u -> passwords.matches(password, u.getPasswordHash()))
-                .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "BAD_CREDENTIALS",
-                        "Wrong username or password"));
+        // Same answer and same slow hash check for an unknown user and a wrong password, so accounts
+        // cannot be discovered from the response or from how long it takes.
+        AppUser user = users.findByUsername(username).orElse(null);
+        boolean matches = passwords.matches(password, user == null ? dummyHash : user.getPasswordHash());
+        if (user == null || !matches) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "BAD_CREDENTIALS", "Wrong username or password");
+        }
         Instant now = Instant.now();
         JwtClaimsSet.Builder claims = JwtClaimsSet.builder()
                 .subject(user.getUsername())
