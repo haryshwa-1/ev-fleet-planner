@@ -8,7 +8,13 @@ import com.moveinsync.evfleet.core.plan.Plan;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.stream.IntStream;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorCompletionService;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Runs the greedy planner once per configuration in parallel and keeps the best plan: fewest
@@ -24,6 +30,13 @@ public final class MultiStartPlanner {
 
     /** The best plan and every run that competed for it. */
     public record Result(Run best, List<Run> runs) {}
+
+    /** A plan finished within a time budget, and how much of the search the time allowed. */
+    public record TimedPlan(Plan plan, int runsFinished, int runsTotal, int searchSteps) {}
+
+    private static final long NO_LIMIT_MILLIS = TimeUnit.DAYS.toMillis(365);
+    /** Share of a budget for multi-start; local search gets what is left. */
+    private static final double MULTI_START_SHARE = 0.8;
 
     private final List<PlannerConfig> configs;
 
@@ -47,12 +60,47 @@ public final class MultiStartPlanner {
     }
 
     public Result plan(Scenario scenario) {
-        List<Run> runs = IntStream.range(0, configs.size()).parallel()
-                .mapToObj(i -> {
-                    Plan plan = new GreedyPlanner(configs.get(i)).plan(scenario);
-                    return new Run(configs.get(i), plan, plan.unassigned().size(), netCostRupees(scenario, plan));
-                })
-                .toList();
+        return plan(scenario, NO_LIMIT_MILLIS);
+    }
+
+    /**
+     * Stops waiting for more runs after {@code budgetMillis} and picks among those that finished, so a
+     * slow machine gets a slightly weaker plan instead of none. It always waits for at least one run.
+     * With time to spare, every run finishes and the result is the same as with no budget.
+     */
+    public Result plan(Scenario scenario, long budgetMillis) {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(budgetMillis);
+        ExecutorService pool = Executors.newFixedThreadPool(Math.min(Runtime.getRuntime().availableProcessors(), configs.size()));
+        try {
+            ExecutorCompletionService<Run> running = new ExecutorCompletionService<>(pool);
+            List<Future<Run>> futures = new ArrayList<>();
+            for (PlannerConfig config : configs) {
+                futures.add(running.submit(() -> {
+                    Plan plan = new GreedyPlanner(config).plan(scenario);
+                    return new Run(config, plan, plan.unassigned().size(), netCostRupees(scenario, plan));
+                }));
+            }
+            for (int finished = 0; finished < futures.size(); finished++) {
+                long left = deadline - System.nanoTime();
+                Future<Run> next = finished == 0 ? running.take() : running.poll(Math.max(left, 0), TimeUnit.NANOSECONDS);
+                if (next == null) break;
+                next.get();
+            }
+            // In configuration order, so which run wins does not depend on thread timing.
+            List<Run> runs = new ArrayList<>();
+            for (Future<Run> f : futures) if (f.isDone()) runs.add(f.get());
+            return pickBest(runs);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new CancellationException("planning was cancelled");
+        } catch (ExecutionException e) {
+            throw new IllegalStateException("a planner run failed", e.getCause());
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    private static Result pickBest(List<Run> runs) {
         Run best = runs.stream()
                 .min(Comparator.comparingInt(Run::backupTrips).thenComparingDouble(Run::netCostRupees))
                 .orElseThrow();
@@ -62,6 +110,14 @@ public final class MultiStartPlanner {
     /** The full planner: the best of the multi-start runs, improved by local search. */
     public Plan planAndImprove(Scenario scenario) {
         return new LocalSearch().improve(scenario, plan(scenario).best().plan()).plan();
+    }
+
+    /** The full planner, finishing within {@code budgetMillis} once at least one run has finished. */
+    public TimedPlan planWithin(Scenario scenario, long budgetMillis) {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(budgetMillis);
+        Result started = plan(scenario, (long) (budgetMillis * MULTI_START_SHARE));
+        LocalSearch.Result improved = new LocalSearch().improve(scenario, started.best().plan(), deadline);
+        return new TimedPlan(improved.plan(), started.runs().size(), configs.size(), improved.steps());
     }
 
     /**

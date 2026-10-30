@@ -33,10 +33,10 @@ class FullScalePlanTest {
     void multiStartStaysUnder30SecondsAndIsValid() {
         Scenario s = new ScenarioGenerator().generate(ScenarioGenerator.Params.standard());
         long start = System.nanoTime();
-        MultiStartPlanner.Result result = MultiStartPlanner.standard().plan(s);
+        Plan plan = MultiStartPlanner.standard().planWithin(s, 24_000).plan();
         long millis = (System.nanoTime() - start) / 1_000_000;
 
-        assertThat(new PlanValidator().validate(s, result.best().plan()).violations()).isEmpty();
+        assertThat(new PlanValidator().validate(s, plan).violations()).isEmpty();
         assertThat(millis).isLessThan(30_000);
     }
 

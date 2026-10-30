@@ -12,6 +12,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CancellationException;
 
 /**
  * Greedy construction: trips in start-time order, each given to the cheapest cab that can
@@ -45,6 +46,7 @@ public final class GreedyPlanner {
         List<UnassignedTrip> unassigned = new ArrayList<>();
 
         for (Trip trip : trips) {
+            if (Thread.currentThread().isInterrupted()) throw new CancellationException("planning was cancelled");
             UnassignedTrip rejected = assign(trip, cabs.values(), evaluator, book);
             if (rejected != null) unassigned.add(rejected);
         }

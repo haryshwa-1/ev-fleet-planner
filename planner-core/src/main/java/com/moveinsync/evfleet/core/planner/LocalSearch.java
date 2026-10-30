@@ -62,6 +62,14 @@ public final class LocalSearch {
     }
 
     public Result improve(Scenario scenario, Plan start) {
+        return improve(scenario, start, Long.MAX_VALUE);
+    }
+
+    /**
+     * As above, but stops early at {@code deadlineNanos} (a {@link System#nanoTime()} value), or when
+     * cancelled. Time only matters on a slow machine: otherwise all steps run and the result repeats.
+     */
+    public Result improve(Scenario scenario, Plan start, long deadlineNanos) {
         Random rnd = new Random(seed);
         Map<String, Trip> trips = scenario.tripsById();
         Map<String, Vehicle> vehicles = scenario.vehiclesById();
@@ -78,7 +86,10 @@ public final class LocalSearch {
         for (int step = 0; step < steps; step++) {
             List<String> targets = backups.values().stream().filter(u -> !HOPELESS.contains(u.reason()))
                     .map(UnassignedTrip::tripId).toList();
-            if (targets.isEmpty()) break;
+            if (targets.isEmpty() || Thread.currentThread().isInterrupted()
+                    || (deadlineNanos != Long.MAX_VALUE && System.nanoTime() - deadlineNanos > 0)) {
+                break;
+            }
             attempted++;
             Trip target = trips.get(targets.get(rnd.nextInt(targets.size())));
             int cutoff = target.startTime() - 30 - rnd.nextInt(121);

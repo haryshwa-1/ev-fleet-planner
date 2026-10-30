@@ -3,6 +3,7 @@ package com.moveinsync.evfleet.core.planner;
 import com.moveinsync.evfleet.core.bound.LowerBoundCalculator;
 import com.moveinsync.evfleet.core.data.ScenarioGenerator;
 import com.moveinsync.evfleet.core.model.Scenario;
+import com.moveinsync.evfleet.core.plan.Plan;
 import com.moveinsync.evfleet.core.validate.PlanValidator;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -18,11 +19,11 @@ class OtherSeedsTest {
         Scenario scenario = new ScenarioGenerator().generate(new ScenarioGenerator.Params(300, 5, 8, 1500, seed));
 
         long t0 = System.nanoTime();
-        MultiStartPlanner.Run best = MultiStartPlanner.standard().plan(scenario).best();
+        Plan best = MultiStartPlanner.standard().planWithin(scenario, 24_000).plan();
         long seconds = (System.nanoTime() - t0) / 1_000_000_000;
 
-        assertThat(new PlanValidator().validate(scenario, best.plan()).violations()).isEmpty();
+        assertThat(new PlanValidator().validate(scenario, best).violations()).isEmpty();
         assertThat(seconds).isLessThan(30);
-        assertThat(best.backupTrips()).isGreaterThanOrEqualTo(new LowerBoundCalculator().compute(scenario).unassignedLowerBound());
+        assertThat(best.unassigned().size()).isGreaterThanOrEqualTo(new LowerBoundCalculator().compute(scenario).unassignedLowerBound());
     }
 }
