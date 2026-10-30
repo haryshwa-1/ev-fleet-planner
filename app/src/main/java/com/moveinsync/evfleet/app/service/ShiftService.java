@@ -75,6 +75,10 @@ public class ShiftService {
         this.timeoutMillis = timeoutMillis;
     }
 
+    public boolean lastShiftIsPlanned(String tenant) {
+        return shifts.findFirstByTenantIdOrderByIdDesc(tenant).filter(s -> s.getCurrentVersion() > 0).isPresent();
+    }
+
     public Shift create(String tenant, ScenarioGenerator.Params p) {
         return shifts.save(new Shift(tenant, p.cabs(), p.hubs(), p.chargersPerHub(), p.trips(), p.seed()));
     }
