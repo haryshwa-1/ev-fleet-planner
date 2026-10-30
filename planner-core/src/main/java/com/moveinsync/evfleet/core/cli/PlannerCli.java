@@ -16,6 +16,7 @@ import com.moveinsync.evfleet.core.plan.UnassignedTrip;
 import com.moveinsync.evfleet.core.planner.GreedyPlanner;
 import com.moveinsync.evfleet.core.planner.MultiStartPlanner;
 import com.moveinsync.evfleet.core.planner.PlannerConfig;
+import com.moveinsync.evfleet.core.planner.Replanner;
 import com.moveinsync.evfleet.core.util.Clock;
 import com.moveinsync.evfleet.core.validate.PlanValidator;
 import com.moveinsync.evfleet.core.validate.ValidationReport;
@@ -101,6 +102,26 @@ public final class PlannerCli {
         report.violations().stream().limit(10).forEach(v -> System.out.println("  ! " + v));
 
         if (opts.containsKey("timeline")) printTimeline(plan, opts.get("timeline"));
+        if (opts.containsKey("drift")) {
+            // CAB-007@19:30=22%
+            String[] cabRest = opts.get("drift").split("@");
+            String[] timeSoc = cabRest[1].split("=");
+            double battery = scenario.vehiclesById().get(cabRest[0]).batteryKWh();
+            double soc = battery * Double.parseDouble(timeSoc[1].replace("%", "")) / 100;
+            Replanner.Result r = new Replanner().onDrift(scenario, plan,
+                    new Replanner.DriftEvent(cabRest[0], Clock.parse(timeSoc[0]), soc));
+            printReplan("Drift: " + cabRest[0] + " reports " + timeSoc[1] + " at " + timeSoc[0], r);
+            writeReplan(out, r);
+        }
+        if (opts.containsKey("replan-bench")) replanBenchmark(scenario, plan, Integer.parseInt(opts.get("replan-bench")));
+        if (opts.containsKey("fail-charger")) {
+            // H1-C3@19:00
+            String[] parts = opts.get("fail-charger").split("@");
+            Replanner.Result r = new Replanner().onChargerFailure(scenario, plan,
+                    new Replanner.ChargerFailure(parts[0], Clock.parse(parts[1])));
+            printReplan("Charger failure: " + parts[0] + " out of service from " + parts[1], r);
+            writeReplan(out, r);
+        }
 
         Files.createDirectories(out);
         ObjectMapper json = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
@@ -121,6 +142,58 @@ public final class PlannerCli {
         json.writeValue(out.resolve("summary.json").toFile(), summary);
         System.out.println("Wrote " + out.toAbsolutePath());
         if (!report.valid()) System.exit(2);
+    }
+
+    /** Random drift and charger-failure events (half each) against the same plan; prints latency percentiles. */
+    private static void replanBenchmark(Scenario scenario, Plan plan, int events) {
+        java.util.Random rnd = new java.util.Random(11);
+        List<String> cabs = scenario.vehicles().stream().map(v -> v.id()).sorted().toList();
+        List<String> chargers = scenario.chargersById().keySet().stream().sorted().toList();
+        Replanner replanner = new Replanner();
+        long[] millis = new long[events];
+        int valid = 0;
+        long moved = 0;
+        for (int i = 0; i < events; i++) {
+            int now = Clock.hm(17, 30) + rnd.nextInt(7 * 60);
+            Replanner.Result r;
+            if (i % 2 == 0) {
+                var v = scenario.vehiclesById().get(cabs.get(rnd.nextInt(cabs.size())));
+                r = replanner.onDrift(scenario, plan, new Replanner.DriftEvent(v.id(), now,
+                        v.batteryKWh() * (0.3 + rnd.nextDouble() * 0.6)));
+            } else {
+                r = replanner.onChargerFailure(scenario, plan,
+                        new Replanner.ChargerFailure(chargers.get(rnd.nextInt(chargers.size())), now));
+            }
+            millis[i] = r.millis();
+            if (r.report().valid()) valid++;
+            moved += r.diff().reassigned() + r.diff().movedToBackup();
+        }
+        java.util.Arrays.sort(millis);
+        System.out.printf("%nRe-plan benchmark: %d events, %d valid; latency p50 %d ms, p95 %d ms, p99 %d ms, max %d ms;"
+                        + " %.1f trips moved per event on average%n", events, valid, millis[events / 2],
+                millis[(int) (events * 0.95)], millis[(int) (events * 0.99)], millis[events - 1], (double) moved / events);
+    }
+
+    private static void printReplan(String title, Replanner.Result r) {
+        System.out.println();
+        System.out.println(title);
+        System.out.println("  Old plan in the new situation: "
+                + new PlanValidator().validate(r.snapshot().scenario(), r.before()).summary());
+        System.out.printf("  Re-planned in %d ms, %d cabs around the event considered%n", r.millis(), r.neighbourhood());
+        System.out.println("  Changes: " + r.diff().summary());
+        r.diff().tripChanges().forEach(c -> System.out.printf("    %s: %s -> %s%n", c.tripId(),
+                c.fromCab() == null ? "backup" : c.fromCab(), c.toCab() == null ? "backup" : c.toCab()));
+        System.out.println("  New plan: " + r.report().summary());
+    }
+
+    private static void writeReplan(Path out, Replanner.Result r) throws IOException {
+        Files.createDirectories(out);
+        Map<String, Object> json = new LinkedHashMap<>();
+        json.put("millis", r.millis());
+        json.put("diff", r.diff());
+        json.put("validator", r.report());
+        json.put("plan", r.after());
+        new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT).writeValue(out.resolve("replan.json").toFile(), json);
     }
 
     private static void printTimeline(Plan plan, String cabId) {

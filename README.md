@@ -4,7 +4,7 @@ MoveInSync case study 6: plan an evening shift for an electric cab fleet — whi
 and when and where each cab charges — without any cab running below its battery floor, any hub
 exceeding its chargers, or any trip finishing late. Trips no EV can cover go to backup cabs with a reason.
 
-> Status: the planning engine (`planner-core`) is complete and tested. Live re-planning, the
+> Status: the planning engine and live re-planning (`planner-core`) are complete and tested. The
 > Spring Boot API and the full design write-up are in progress.
 
 ## Results (300 cabs, 5 hubs / 40 chargers, 1,500 trips, seed 42)
@@ -47,12 +47,39 @@ the refill-inclusive figure is the one plans are compared on.
    traffic model is FIFO (leaving later never arrives earlier), so no plan can reach a pickup sooner by
    waiting or splitting a drive; property tests check this over 100,000 random cases.
 
+## Live re-planning
+
+When a cab reports a different state of charge than planned, or a charger fails, `Replanner` repairs the
+plan for the rest of the shift:
+
+1. **Snapshot** at the event time: finished activities become history; each cab starts where it really is.
+   Activities in progress are kept (they cannot be undone). The rest of the plan is checked by the same validator.
+2. **Apply the event**: the charge gap is applied to the cab's current activity, or the charger is marked dead
+   (a cab charging on it stops with what it gained so far).
+3. **Repair locally**: the affected cabs plus the 10 nearest (40 if a trip would be lost and time allows)
+   are re-planned. A trip stays with its original cab whenever that cab can still do it, a cab whose
+   situation did not change keeps its exact steps, and a trip that must move prefers a cab that can still
+   do its own next trip, so one change does not knock on into a chain.
+4. **Report** a `PlanDiff` (trips moved, sent to backup or rescued, sessions added/removed) and the validator verdict.
+
+| Event (seed 42, single greedy plan) | Old plan now | Re-plan | Changes |
+|---|---|---|---|
+| CAB-007 reports 22% at 19:30 (plan: 47%) | INVALID (9 violations) | VALID, 33 ms | 5 cabs, 7 trips moved, 0 to backup |
+| Charger H1-C1 fails at 19:00 | INVALID (29 violations) | VALID, 40 ms | 0 trips moved; 25 sessions moved to other chargers |
+| 200 random drift / failure events | | 200/200 VALID | p50 6 ms · p99 23 ms · max 34 ms (budget 2 s) |
+
+```bash
+./mvnw -q -pl planner-core exec:java -Dexec.args="--idle 2 --drift CAB-007@19:30=22%"
+./mvnw -q -pl planner-core exec:java -Dexec.args="--idle 2 --fail-charger H1-C1@19:00"
+./mvnw -q -pl planner-core exec:java -Dexec.args="--idle 2 --replan-bench 200"
+```
+
 ## Run it
 
 Requires Java 21+. The Maven wrapper is included, so Maven does not need to be installed.
 
 ```bash
-./mvnw test                                                   # 64 tests
+./mvnw test                                                   # 75 tests
 ./mvnw -q -DskipTests install
 ./mvnw -q -pl planner-core exec:java -Dexec.args="--timeline CAB-007"
 ```
