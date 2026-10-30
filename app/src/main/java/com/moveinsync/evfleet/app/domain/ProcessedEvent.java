@@ -20,16 +20,23 @@ public class ProcessedEvent {
     private Long shiftId;
     @Column(name = "idempotency_key")
     private String idempotencyKey;
+    /** What the event said, so the same key on a different event can be refused. */
+    private String fingerprint;
     @JdbcTypeCode(SqlTypes.JSON)
     private String response;
 
     protected ProcessedEvent() {
     }
 
-    public ProcessedEvent(Long shiftId, String idempotencyKey, String response) {
+    public ProcessedEvent(Long shiftId, String idempotencyKey, String fingerprint, String response) {
         this.shiftId = shiftId;
         this.idempotencyKey = idempotencyKey;
+        this.fingerprint = fingerprint;
         this.response = response;
+    }
+
+    public String getFingerprint() {
+        return fingerprint;
     }
 
     public String getResponse() {

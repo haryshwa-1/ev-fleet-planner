@@ -182,6 +182,26 @@ class ApiTest {
     }
 
     @Test
+    void aKeyReusedForADifferentEventIsRefusedInsteadOfLosingIt() throws Exception {
+        drift(soc("CAB-005", 40, "19:30", 1, "reused")).andExpect(status().isOk());
+        drift(soc("CAB-009", 18, "19:30", 1, "reused")).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"));
+        send("/shifts/" + shift + "/chargers/H1-C1/failure", operator,
+                Map.of("failedAt", "19:30", "idempotencyKey", "reused")).andExpect(status().isConflict());
+        fetch("/shifts/" + shift + "/plan/summary", operator).andExpect(jsonPath("$.version").value(2));
+    }
+
+    @Test
+    void aTimeAfterTheShiftCannotMoveTheClockAndCanBeCorrected() throws Exception {
+        drift(soc("CAB-005", 40, "23:30+1", 1, "typo")).andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("EVENT_TIME_AFTER_SHIFT"));
+        fetch("/shifts/" + shift + "/plan/summary", operator).andExpect(jsonPath("$.version").value(1));
+        // Nothing was recorded, so the same key and sequence work once the time is right.
+        JsonNode fixed = read(drift(soc("CAB-005", 40, "19:30", 1, "typo")).andExpect(status().isOk()));
+        assertThat(fixed.get("effectiveAt").asText()).isEqualTo("19:30");
+    }
+
+    @Test
     void anOlderEventFromACabIsRefused() throws Exception {
         drift(soc("CAB-005", 40, "19:30", 5, "seq-5")).andExpect(status().isOk());
         drift(soc("CAB-005", 45, "19:25", 4, "seq-4")).andExpect(status().isConflict())

@@ -78,7 +78,8 @@ public class EventService {
                              String idempotencyKey) {
         int observed = parseTime(observedAt);
         Shift shift = lock(tenant, shiftId);
-        Optional<EventResult> seen = previous(shift, idempotencyKey, "soc");
+        String fingerprint = "soc|" + cabId + "|" + socPercent + "|" + observedAt + "|" + seq;
+        Optional<EventResult> seen = previous(shift, idempotencyKey, "soc", fingerprint);
         if (seen.isPresent()) return seen.get();
 
         PlanState state = store.current(shift);
@@ -87,7 +88,7 @@ public class EventService {
         checkOrder(shift, cabId, seq);
 
         double socKWh = cab.batteryKWh() * socPercent / 100;
-        return apply(shift, state, idempotencyKey, "soc", observed, String.format("DRIFT %s %.0f%% at %s", cabId, socPercent, observedAt),
+        return apply(shift, state, idempotencyKey, fingerprint, "soc", observed, String.format("DRIFT %s %.0f%% at %s", cabId, socPercent, observedAt),
                 (scenario, minute) -> replanner.onDrift(scenario, state.plan(), new Replanner.DriftEvent(cabId, minute, socKWh)));
     }
 
@@ -96,7 +97,8 @@ public class EventService {
                                       String idempotencyKey) {
         int observed = parseTime(failedAt);
         Shift shift = lock(tenant, shiftId);
-        Optional<EventResult> seen = previous(shift, idempotencyKey, "charger_failure");
+        String fingerprint = "charger_failure|" + chargerId + "|" + failedAt;
+        Optional<EventResult> seen = previous(shift, idempotencyKey, "charger_failure", fingerprint);
         if (seen.isPresent()) return seen.get();
 
         PlanState state = store.current(shift);
@@ -106,7 +108,7 @@ public class EventService {
             metrics.event("charger_failure", "already_failed");
             throw new ApiException(HttpStatus.CONFLICT, "CHARGER_ALREADY_FAILED", "This charger is already out of service");
         }
-        return apply(shift, state, idempotencyKey, "charger_failure", observed, "CHARGER_FAILURE " + chargerId + " at " + failedAt,
+        return apply(shift, state, idempotencyKey, fingerprint, "charger_failure", observed, "CHARGER_FAILURE " + chargerId + " at " + failedAt,
                 (scenario, minute) -> replanner.onChargerFailure(scenario, state.plan(), new Replanner.ChargerFailure(chargerId, minute)));
     }
 
@@ -115,8 +117,13 @@ public class EventService {
      * The plan's clock never goes backwards: a late event takes effect at the current clock, because
      * activities before it have already been committed to history.
      */
-    private EventResult apply(Shift shift, PlanState state, String key, String type, int observed, String cause,
-                              BiFunction<Scenario, Integer, Replanner.Result> replan) {
+    private EventResult apply(Shift shift, PlanState state, String key, String fingerprint, String type, int observed,
+                              String cause, BiFunction<Scenario, Integer, Replanner.Result> replan) {
+        // The clock never goes back, so one mistyped future time would otherwise end the shift early.
+        if (observed > state.scenario().shiftEnd()) {
+            metrics.event(type, "outside_shift");
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "EVENT_TIME_AFTER_SHIFT", "This time is after the end of the shift");
+        }
         int minute = Math.max(observed, state.asOfMinute());
         metrics.eventLag(minute - observed);
         Replanner.Result r = replan.apply(state.scenario(), minute);
@@ -137,7 +144,7 @@ public class EventService {
             result = result(Outcome.REJECTED, shift.getCurrentVersion(), minute, r);
             log.warn("shift {}: repair for {} rejected: {}", shift.getId(), cause, r.report().summary());
         }
-        processed.save(new ProcessedEvent(shift.getId(), key, write(result)));
+        processed.save(new ProcessedEvent(shift.getId(), key, fingerprint, write(result)));
         return result;
     }
 
@@ -152,11 +159,15 @@ public class EventService {
         return shifts.lockByIdAndTenantId(shiftId, tenant).orElseThrow(() -> ApiException.notFound("Shift"));
     }
 
-    private Optional<EventResult> previous(Shift shift, String key, String type) {
-        Optional<EventResult> seen = processed.findByShiftIdAndIdempotencyKey(shift.getId(), key)
-                .map(p -> read(p.getResponse()).asDuplicate());
+    /** The stored answer if this event was seen before; the same key on a different event is a client bug. */
+    private Optional<EventResult> previous(Shift shift, String key, String type, String fingerprint) {
+        Optional<ProcessedEvent> seen = processed.findByShiftIdAndIdempotencyKey(shift.getId(), key);
+        if (seen.isPresent() && !seen.get().getFingerprint().equals(fingerprint)) {
+            metrics.event(type, "key_reused");
+            throw new ApiException(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_REUSED", "This key was already used for a different event");
+        }
         seen.ifPresent(x -> metrics.event(type, "duplicate"));
-        return seen;
+        return seen.map(p -> read(p.getResponse()).asDuplicate());
     }
 
     /** Refuses anything not newer than the last event from this cab, then records it as seen. */
