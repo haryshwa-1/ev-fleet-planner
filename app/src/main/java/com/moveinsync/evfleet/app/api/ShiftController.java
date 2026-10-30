@@ -1,6 +1,7 @@
 package com.moveinsync.evfleet.app.api;
 
 import com.moveinsync.evfleet.app.repository.PlanVersionRepository;
+import com.moveinsync.evfleet.app.monitoring.FleetMetrics;
 import com.moveinsync.evfleet.app.service.EventService;
 import com.moveinsync.evfleet.app.service.ShiftService;
 import com.moveinsync.evfleet.core.plan.Activity;
@@ -38,10 +39,12 @@ public class ShiftController {
 
     private final ShiftService shifts;
     private final EventService events;
+    private final FleetMetrics metrics;
 
-    public ShiftController(ShiftService shifts, EventService events) {
+    public ShiftController(ShiftService shifts, EventService events, FleetMetrics metrics) {
         this.shifts = shifts;
         this.events = events;
+        this.metrics = metrics;
     }
 
     @PostMapping("/shifts/{id}/plan")
@@ -82,14 +85,14 @@ public class ShiftController {
     @PostMapping("/shifts/{id}/events/soc")
     ResponseEntity<EventService.EventResult> soc(@AuthenticationPrincipal Jwt jwt, @PathVariable long id,
                                                  @Valid @RequestBody SocEvent e) {
-        return respond(events.drift(tenant(jwt), id, e.cabId(), e.socPercent(), e.observedAt(), e.seq(), e.idempotencyKey()));
+        return respond(metrics.inFlight(() -> events.drift(tenant(jwt), id, e.cabId(), e.socPercent(), e.observedAt(), e.seq(), e.idempotencyKey())));
     }
 
     @PostMapping("/shifts/{id}/chargers/{chargerId}/failure")
     ResponseEntity<EventService.EventResult> chargerFailure(@AuthenticationPrincipal Jwt jwt, @PathVariable long id,
                                                             @PathVariable String chargerId,
                                                             @Valid @RequestBody ChargerFailure e) {
-        return respond(events.chargerFailure(tenant(jwt), id, chargerId, e.failedAt(), e.idempotencyKey()));
+        return respond(metrics.inFlight(() -> events.chargerFailure(tenant(jwt), id, chargerId, e.failedAt(), e.idempotencyKey())));
     }
 
     private static ResponseEntity<EventService.EventResult> respond(EventService.EventResult result) {

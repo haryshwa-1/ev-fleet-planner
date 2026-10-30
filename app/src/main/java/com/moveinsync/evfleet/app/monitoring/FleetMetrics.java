@@ -8,6 +8,7 @@ import io.micrometer.core.instrument.Timer;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 
 /** The fleet's business metrics, exposed at /actuator/prometheus. */
 @Component
@@ -19,7 +20,9 @@ public class FleetMetrics {
     private final DistributionSummary eventLagMinutes;
     private final Counter validatorFailures;
     private final Counter plannerTimeouts;
+    private final Counter eventRetries;
     private final AtomicInteger unassignedTrips = new AtomicInteger();
+    private final AtomicInteger eventsInFlight = new AtomicInteger();
 
     public FleetMetrics(MeterRegistry registry) {
         this.registry = registry;
@@ -29,6 +32,9 @@ public class FleetMetrics {
                 .description("How far an event's time was behind the plan's clock").register(registry);
         this.validatorFailures = registry.counter("validator.failures");
         this.plannerTimeouts = registry.counter("planner.timeouts");
+        this.eventRetries = registry.counter("events.retries");
+        Gauge.builder("events.in.flight", eventsInFlight, AtomicInteger::get)
+                .description("Events being applied or queued behind a shift's lock").register(registry);
         Gauge.builder("unassigned.trips", unassignedTrips, AtomicInteger::get)
                 .description("Backup trips in the plan most recently published").register(registry);
     }
@@ -56,6 +62,20 @@ public class FleetMetrics {
 
     public void plannerTimeout() {
         plannerTimeouts.increment();
+    }
+
+    /** Runs an event while counting it in {@code events.in.flight}, the queue behind the shift locks. */
+    public <T> T inFlight(Supplier<T> event) {
+        eventsInFlight.incrementAndGet();
+        try {
+            return event.get();
+        } finally {
+            eventsInFlight.decrementAndGet();
+        }
+    }
+
+    public void eventRetried() {
+        eventRetries.increment();
     }
 
     public void cabStranded() {
