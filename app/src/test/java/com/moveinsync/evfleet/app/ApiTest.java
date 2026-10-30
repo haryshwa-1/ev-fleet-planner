@@ -222,6 +222,15 @@ class ApiTest {
     }
 
     @Test
+    void theOvernightScheduleIsCheckedAndLeavesTheLivePlanAlone() throws Exception {
+        fetch("/shifts/" + shift + "/plan/overnight", operator).andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.notReady").isEmpty());
+        fetch("/shifts/" + shift + "/plan/overnight", employee).andExpect(status().isForbidden());
+        fetch("/shifts/" + shift + "/plan/summary", operator).andExpect(jsonPath("$.version").value(1));
+    }
+
+    @Test
     void aFreshPlanCannotOverwriteALiveShift() throws Exception {
         drift(soc("CAB-005", 40, "19:30", 1, "live")).andExpect(status().isOk());
         send("/shifts/" + shift + "/plan", admin, Map.of()).andExpect(status().isConflict())

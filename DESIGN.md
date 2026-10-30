@@ -122,5 +122,6 @@ from 37 moved trips to 7, and one charger failure from 67 to 0.
   pass. Measured latency is far below it (see `BENCHMARK.md`).
 - Interrupting a timed-out planner: the client gets its answer, but the threads finish in the background.
 - Real employee and fleet data: shifts come from a seeded generator.
-- Multi-day planning and end-of-shift charge targets.
+- Multi-day planning. The shift ends with a checked overnight schedule (`OvernightCharging`) instead of a limit on the
+  shift: ending low is the cheap choice while cabs can refill at the night rate. Tomorrow's demand is not considered.
 - Asymmetric JWT keys and key rotation.

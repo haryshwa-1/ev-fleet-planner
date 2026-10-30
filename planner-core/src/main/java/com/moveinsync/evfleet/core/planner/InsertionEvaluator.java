@@ -61,7 +61,7 @@ public final class InsertionEvaluator {
     }
 
     /** All hubs, nearest first. Cabs revisit the same few places, so each location is sorted only once. */
-    private List<Hub> nearestHubs(Location at) {
+    List<Hub> nearestHubs(Location at) {
         return hubsByDistance.computeIfAbsent(at, l -> hubs.stream()
                 .sorted(Comparator.comparingDouble(h -> physics.geo().roadKm(l, h.location()))).toList());
     }

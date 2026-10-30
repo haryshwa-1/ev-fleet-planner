@@ -64,6 +64,11 @@ public class ShiftController {
         return shifts.validate(tenant(jwt), id);
     }
 
+    @GetMapping("/shifts/{id}/plan/overnight")
+    ShiftService.Overnight overnight(@AuthenticationPrincipal Jwt jwt, @PathVariable long id) {
+        return shifts.overnight(tenant(jwt), id);
+    }
+
     @GetMapping("/shifts/{id}/plan/versions")
     List<PlanVersionRepository.Info> versions(@AuthenticationPrincipal Jwt jwt, @PathVariable long id) {
         return shifts.versions(tenant(jwt), id);

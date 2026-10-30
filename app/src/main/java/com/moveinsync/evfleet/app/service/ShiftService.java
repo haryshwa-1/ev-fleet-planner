@@ -6,6 +6,7 @@ import com.moveinsync.evfleet.app.error.ApiException;
 import com.moveinsync.evfleet.app.monitoring.FleetMetrics;
 import com.moveinsync.evfleet.app.repository.PlanVersionRepository;
 import com.moveinsync.evfleet.app.repository.ShiftRepository;
+import com.moveinsync.evfleet.core.planner.OvernightCharging;
 import com.moveinsync.evfleet.core.bound.LowerBound;
 import com.moveinsync.evfleet.core.bound.LowerBoundCalculator;
 import com.moveinsync.evfleet.core.data.ScenarioGenerator;
@@ -48,6 +49,10 @@ public class ShiftService {
     }
 
     /** What an employee may see: their own trip and nothing about anyone else. */
+    public record Overnight(double targetPercent, int cabsCharged, double energyKWh, double costRupees, String lastFinish,
+                            List<String> notReady, boolean valid) {
+    }
+
     public record MyTrip(String tripId, String pickupTime, String status, String cabId) {
     }
 
@@ -153,6 +158,15 @@ public class ShiftService {
     public ValidationReport validate(String tenant, long shiftId) {
         PlanState state = store.current(find(tenant, shiftId));
         return new PlanValidator().validate(state.scenario(), state.plan());
+    }
+
+    /** Whether the fleet can be ready for tomorrow from this plan; computed on demand, never stored. */
+    public Overnight overnight(String tenant, long shiftId) {
+        PlanState state = store.current(find(tenant, shiftId));
+        OvernightCharging.Result r = new OvernightCharging().schedule(state.scenario(), state.plan());
+        ValidationReport report = new PlanValidator().validate(state.scenario(), r.plan());
+        return new Overnight(OvernightCharging.DEFAULT_TARGET_FRACTION * 100, r.cabsCharged(), r.energyKWh(), r.costRupees(),
+                r.lastFinish() == 0 ? null : Clock.format(r.lastFinish()), r.notReady(), report.valid());
     }
 
     public List<PlanVersionRepository.Info> versions(String tenant, long shiftId) {
