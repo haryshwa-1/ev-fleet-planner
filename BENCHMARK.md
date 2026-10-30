@@ -23,6 +23,76 @@ Trips scale at 5 per cab, and chargers with hubs of 8. One unmeasured run warms 
 - Time grows about 10x per 3.3x fleet step, close to the expected O(T x V).
 - Lower bound calculation takes 0.1 s at 300 cabs and 5.7 s at 3,000.
 
+## Other seeds
+
+Seed 42 is the demo and was also used for tuning, so its numbers could flatter the planner. The same 300-cab shift on
+seeds 1-20, which were not used for tuning:
+
+| Seed | Backup | Lower bound | Gap | Cost incl. refill | Plan time | Validator | Re-plans valid | Stranded | Slowest re-plan |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | 65 | 60 | 5 | Rs 26323 | 8.1 s | VALID | 40/40 | 3 | 33 ms |
+| 2 | 25 | 21 | 4 | Rs 28064 | 6.9 s | VALID | 40/40 | 6 | 23 ms |
+| 3 | 58 | 51 | 7 | Rs 26748 | 7.4 s | VALID | 40/40 | 10 | 24 ms |
+| 4 | 35 | 28 | 7 | Rs 24993 | 7.3 s | VALID | 40/40 | 8 | 22 ms |
+| 5 | 33 | 29 | 4 | Rs 25554 | 7.7 s | VALID | 40/40 | 9 | 21 ms |
+| 6 | 57 | 52 | 5 | Rs 26676 | 6.6 s | VALID | 40/40 | 4 | 22 ms |
+| 7 | 37 | 37 | 0 | Rs 27531 | 6.5 s | VALID | 40/40 | 5 | 21 ms |
+| 8 | 62 | 60 | 2 | Rs 23981 | 7.5 s | VALID | 40/40 | 8 | 21 ms |
+| 9 | 52 | 42 | 10 | Rs 24934 | 6.4 s | VALID | 40/40 | 7 | 22 ms |
+| 10 | 68 | 60 | 8 | Rs 25857 | 6.5 s | VALID | 40/40 | 4 | 20 ms |
+| 11 | 60 | 54 | 6 | Rs 26349 | 6.4 s | VALID | 40/40 | 4 | 23 ms |
+| 12 | 41 | 37 | 4 | Rs 24463 | 6.3 s | VALID | 40/40 | 5 | 22 ms |
+| 13 | 58 | 50 | 8 | Rs 26949 | 7.2 s | VALID | 40/40 | 5 | 24 ms |
+| 14 | 68 | 62 | 6 | Rs 24868 | 7.4 s | VALID | 40/40 | 5 | 22 ms |
+| 15 | 42 | 32 | 10 | Rs 27682 | 6.7 s | VALID | 40/40 | 4 | 22 ms |
+| 16 | 77 | 62 | 15 | Rs 26701 | 7.3 s | VALID | 40/40 | 9 | 21 ms |
+| 17 | 60 | 51 | 9 | Rs 25280 | 7.7 s | VALID | 40/40 | 1 | 22 ms |
+| 18 | 42 | 33 | 9 | Rs 25513 | 6.8 s | VALID | 40/40 | 2 | 23 ms |
+| 19 | 51 | 40 | 11 | Rs 27229 | 6.4 s | VALID | 40/40 | 5 | 23 ms |
+| 20 | 75 | 68 | 7 | Rs 26407 | 6.8 s | VALID | 40/40 | 3 | 22 ms |
+
+- Average 53 backup trips, against 54 on seed 42, so seed 42 is typical and not a lucky case. The range is 25 to 77,
+  because each shift is a different set of trips.
+- Average gap to the lower bound is 6.9 trips (range 0 to 15), against 8 on seed 42. On seed 7 the gap is 0, so that
+  plan is proven to use the fewest backup cabs.
+- Every plan is valid and under 30 s, and all 800 re-plans are valid, including 107 where the cab was stranded.
+- No single setting wins: 12 different configurations won across 21 seeds. Multi-start saves about 2 trips on average
+  over the default configuration.
+
+**Charging rule on unseen seeds.** Average over 7 other seeds (101-107), by how far a cab charges at the Rs 12 peak:
+
+| Peak target | Backup trips | Cost incl. refill |
+|---|---|---|
+| 30% | 42.3 | Rs 26,190 |
+| 40% | 42.3 | Rs 26,229 |
+| **50% (used)** | **42.3** | **Rs 26,230** |
+| 60% | 42.1 | Rs 28,089 |
+| 70% | 42.3 | Rs 30,477 |
+| 80% | 42.1 | Rs 30,325 |
+
+The rule saves about 13.5% against 80% without losing trips, so the saving is not special to seed 42 (15% there at the
+same comparison). Anything from 30% to 50% is about equal, and cost starts to jump just above 50%.
+
+**Different fleet shapes** (seed 1, one run each, all valid):
+
+| Shape | Backup | Lower bound | Gap |
+|---|---|---|---|
+| 300 cabs, 15 chargers | 63 | 60 | 3 |
+| 300 cabs, 2 hubs of 8 chargers | 64 | 60 | 4 |
+| 400 cabs, 1,500 trips | 0 | 0 | 0 |
+| 300 cabs, 1,800 trips | 146 | 117 | 29 |
+| 200 cabs, 1,500 trips | 241 | 145 | 96 |
+
+The gap widens when cabs are scarce. Part of that may be the bound, which ignores battery limits, so these runs do not
+show how far from optimal those plans really are.
+
+**Limit of this test:** every seed comes from the same generator, so it shows the results are not luck within this model
+of a city. It does not show how the planner behaves on real demand.
+
+```bash
+./mvnw -q -pl planner-core exec:java -Dexec.mainClass=com.moveinsync.evfleet.core.cli.SeedSweep -Dexec.args=20
+```
+
 An early run showed much worse growth (1,503 s at 3,000 cabs) because every insertion scanned all hubs. Caching each
 location's hubs by distance and rejecting late cabs earlier gave a 10x gain at that size. The resulting plans were
 identical at 300 and 1,000 cabs.
