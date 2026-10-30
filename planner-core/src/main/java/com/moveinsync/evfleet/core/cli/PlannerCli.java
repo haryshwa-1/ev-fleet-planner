@@ -16,6 +16,7 @@ import com.moveinsync.evfleet.core.plan.UnassignedTrip;
 import com.moveinsync.evfleet.core.planner.GreedyPlanner;
 import com.moveinsync.evfleet.core.planner.MultiStartPlanner;
 import com.moveinsync.evfleet.core.planner.PlannerConfig;
+import com.moveinsync.evfleet.core.planner.LocalSearch;
 import com.moveinsync.evfleet.core.planner.Replanner;
 import com.moveinsync.evfleet.core.util.Clock;
 import com.moveinsync.evfleet.core.validate.PlanValidator;
@@ -66,11 +67,14 @@ public final class PlannerCli {
             plan = new GreedyPlanner(config).plan(scenario);
         } else {
             MultiStartPlanner.Result result = MultiStartPlanner.standard().plan(scenario);
-            plan = result.best().plan();
+            LocalSearch.Result improved = new LocalSearch().improve(scenario, result.best().plan());
+            plan = improved.plan();
             System.out.printf("Multi-start: %d configurations, best %s (backup trips ranged %d-%d)%n",
                     result.runs().size(), result.best().config(),
                     result.runs().stream().mapToInt(MultiStartPlanner.Run::backupTrips).min().orElse(0),
                     result.runs().stream().mapToInt(MultiStartPlanner.Run::backupTrips).max().orElse(0));
+            System.out.printf("Local search: %d of %d rebuilds kept, backup trips %d -> %d%n", improved.kept(), improved.steps(),
+                    result.best().backupTrips(), plan.unassigned().size());
         }
         long planMs = (System.nanoTime() - t0) / 1_000_000;
 

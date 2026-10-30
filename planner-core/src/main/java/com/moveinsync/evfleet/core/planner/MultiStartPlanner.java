@@ -59,6 +59,11 @@ public final class MultiStartPlanner {
         return new Result(best, runs);
     }
 
+    /** The full planner: the best of the multi-start runs, improved by local search. */
+    public Plan planAndImprove(Scenario scenario) {
+        return new LocalSearch().improve(scenario, plan(scenario).best().plan()).plan();
+    }
+
     /**
      * Charging bought during the shift plus refilling every cab overnight, at the cheapest tariff,
      * back to the charge it started with. Without the refill, a plan that leaves cabs empty would

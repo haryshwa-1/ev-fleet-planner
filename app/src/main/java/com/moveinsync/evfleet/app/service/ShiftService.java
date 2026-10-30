@@ -118,7 +118,7 @@ public class ShiftService {
     }
 
     private Plan planWithinTimeout(Scenario scenario) {
-        Future<Plan> run = plannerThreads.submit(() -> MultiStartPlanner.standard().plan(scenario).best().plan());
+        Future<Plan> run = plannerThreads.submit(() -> MultiStartPlanner.standard().planAndImprove(scenario));
         try {
             return run.get(timeoutMillis, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {

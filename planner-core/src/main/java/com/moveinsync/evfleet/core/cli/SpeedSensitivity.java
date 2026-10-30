@@ -40,11 +40,11 @@ public final class SpeedSensitivity {
             for (long seed : SEEDS) {
                 Scenario assumed = new ScenarioGenerator().generate(new ScenarioGenerator.Params(300, 5, 8, 1500, seed));
                 Scenario truth = withSpeeds(assumed, factor);
-                MultiStartPlanner.Run informed = MultiStartPlanner.standard().plan(truth).best();
-                backup += informed.backupTrips();
-                cost += informed.netCostRupees();
-                valid &= new PlanValidator().validate(truth, informed.plan()).valid();
-                drive(truth, MultiStartPlanner.standard().plan(assumed).best().plan(), total);
+                Plan informed = MultiStartPlanner.standard().planAndImprove(truth);
+                backup += informed.unassigned().size();
+                cost += MultiStartPlanner.netCostRupees(truth, informed);
+                valid &= new PlanValidator().validate(truth, informed).valid();
+                drive(truth, MultiStartPlanner.standard().planAndImprove(assumed), total);
             }
             System.out.printf("| %+.0f%% | %.1f | Rs %.0f | %s | %.1f | %.1f | %d min | %.1f |%n", (factor - 1) * 100,
                     backup / SEEDS.length, cost / SEEDS.length, valid ? "yes" : "NO", (double) total.late / SEEDS.length,
