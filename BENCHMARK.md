@@ -93,6 +93,31 @@ of a city. It does not show how the planner behaves on real demand.
 ./mvnw -q -pl planner-core exec:java -Dexec.mainClass=com.moveinsync.evfleet.core.cli.SeedSweep -Dexec.args=20
 ```
 
+## Traffic speed sensitivity
+
+The speeds are estimates, not measurements. Average over seeds 42 and 1-4, with every speed changed by the same share.
+The first columns plan knowing the true speeds. The "no re-plan" columns take the plan made with our speeds and follow
+it under the true ones, with delays carrying over and no cab leaving earlier than planned.
+
+| True speed vs assumed | Backup, planned knowing it | Cost incl. refill | All valid | Pickups late, no re-plan | Over 10 min late | Worst | Cabs below 15% floor |
+|---|---|---|---|---|---|---|---|
+| -20% | 118.4 | Rs 23,440 | yes | 795.0 | 358.6 | 34 min | 0.0 |
+| -10% | 74.6 | Rs 25,330 | yes | 456.8 | 12.8 | 15 min | 0.0 |
+| +0% | 47.4 | Rs 26,294 | yes | 0.0 | 0.0 | 0 min | 0.0 |
+| +10% | 24.8 | Rs 27,521 | yes | 0.0 | 0.0 | 0 min | 0.0 |
+| +20% | 6.2 | Rs 28,052 | yes | 0.0 | 0.0 | 0 min | 0.0 |
+
+- **Results depend heavily on the speeds.** Backup trips change about 2.5 times when speeds are 10% lower, so the headline
+  figure is only as good as the traffic estimate.
+- **Plans have little spare time.** Cabs are planned to arrive close to pickup, so traffic 10% slower than assumed makes
+  about 450 of 1,450 pickups late if nobody re-plans, nearly all by 10 minutes or less. Drift events do not cover this:
+  they report charge, not delay.
+- The floor column is optimistic: this test changes speed only, not how much energy a km takes in traffic.
+
+```bash
+./mvnw -q -pl planner-core exec:java -Dexec.mainClass=com.moveinsync.evfleet.core.cli.SpeedSensitivity
+```
+
 An early run showed much worse growth (1,503 s at 3,000 cabs) because every insertion scanned all hubs. Caching each
 location's hubs by distance and rejecting late cabs earlier gave a 10x gain at that size. The resulting plans were
 identical at 300 and 1,000 cabs.

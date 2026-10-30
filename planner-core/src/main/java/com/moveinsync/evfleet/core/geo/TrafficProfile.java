@@ -131,4 +131,11 @@ public final class TrafficProfile {
     private Band bandAt(int minute) {
         return bandByMinute[Math.floorMod(minute, DAY)];
     }
+
+    /** The same day with every speed multiplied by {@code factor}, to test how much plans depend on them. */
+    public TrafficProfile withSpeedsScaled(double factor) {
+        List<Band> scaled = bands.stream().map(b -> new Band(b.label(), b.startMinuteOfDay(), b.endMinuteOfDay(),
+                b.speedKmph() * factor, b.energyFactor())).toList();
+        return new TrafficProfile(scaled, freeFlowSpeedKmph * factor);
+    }
 }
