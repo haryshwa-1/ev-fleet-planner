@@ -23,29 +23,40 @@ flowchart LR
     store --> db[(PostgreSQL: immutable plan versions)]
 ```
 
-`planner-core` has no framework dependency, so the algorithm can be tested and run without a server or database.
-The validator shares only the scenario's physics rules with the planner, and recomputes every plan from scratch.
+`planner-core` has no framework dependency, so the algorithm runs and is tested without a server or database. The
+validator shares only the physics rules with the planner and recomputes every plan from scratch.
+
+**Data model:** `tenants`; `users` (role, tenant, employee's trip); `shifts` (generator parameters, current version);
+`plan_versions` (immutable JSONB state per version); `processed_events` (idempotency key, event fingerprint, stored
+response); `cab_event_seq` (last sequence per cab). The tenant comes from the signed token and every lookup takes it.
+
+**API:** `POST /auth/login`; `POST /admin/shifts`; `POST /shifts/{id}/plan`; `GET /shifts/{id}/plan/{summary, unassigned,
+validate, versions, overnight}`; `GET /shifts/{id}/cabs/{cabId}/timeline`; `POST /shifts/{id}/events/soc`;
+`POST /shifts/{id}/chargers/{chargerId}/failure`; `GET /me/trip`. Roles are in the README.
 
 ## Planning
 
+**Charging curve:** two parts. Full power to 80%, then 30% of it. Power is the lower of the charger's and the car's.
+
 **Heuristic:** greedy insertion. Trips go in start-time order, and each is offered to every cab, directly or after a
-charging stop at one of its two nearest hubs. The lowest score wins; the score is empty km plus charging cost, idle
-time and a low-charge penalty, all in km-equivalents. A cab accepts a trip only if it can still reach a charger
-afterwards in worst-case traffic, so no later step can strand it. 16 configurations of the scoring weights run in
-parallel, and the plan with the fewest backup trips, then the lowest cost including the overnight refill, wins.
-Local search then improves that plan: it clears the later work of 5 cabs near a backup trip, rebuilds it with the same
-insertion rule plus some randomness, and keeps the result only if it is better. It runs a fixed 5,000 steps with a fixed
-seed, so results repeat on any machine, and it returns the original plan if the result ever fails the validator.
+charging stop at one of its two nearest hubs. A cab accepts a trip only if it can still reach a charger afterwards in
+worst-case traffic, so no later step can strand it. 16 configurations run in parallel. Local search then improves the
+best plan: it clears the later work of 5 cabs near a backup trip and rebuilds it, keeping the result only if better. It
+runs a fixed 5,000 steps with a fixed seed, so results repeat, and it returns the original plan if the validator refuses.
 
-**Complexity:** O(T log T + T x V x (1 + H x C x log S)) time per greedy run and O(V + T + S) memory, for T trips,
-V cabs, H hubs tried, C chargers per hub and S bookings per charger. The charging branch only runs for cabs that
-need it, so it behaves close to O(T x V) in practice (measured in `BENCHMARK.md`). Multi-start multiplies that by 16 and divides by the cores. Local search adds
-O(S x (V + F x K x H x C x log B)) for S steps, F trips freed per step, K cabs per step and B bookings per charger.
+**Backups against cost:** backups always come first. Plans are compared by fewest backups, then lowest cost including the
+overnight refill, so no saving can justify a lost trip at that level. Inside one greedy run, each insertion's score
+mixes empty km with charging cost in km-equivalents, which can prefer a cheaper option that costs a trip later. That is
+why several configurations run and the ranking above decides.
 
-**Optimality:** a Hopcroft-Karp matching over "this cab or trip can reach that next trip in time" gives the minimum
-backup trips in any plan. That bound is sound because the traffic model is FIFO: leaving later never arrives earlier,
-so waiting or splitting a drive cannot reach a pickup sooner. The gap is reported on every plan. Charging cost has
-no useful lower bound here: cabs start with enough total charge that no trip strictly requires charging.
+**Complexity:** O(T log T + T x V x (1 + H x C x log S)) time per greedy run and O(V + T + S) memory, for T trips, V cabs,
+H hubs tried, C chargers per hub and S bookings per charger. Multi-start multiplies that by 16 and divides by the cores.
+Local search adds O(N x (V + F x K x H x C x log S)) for N steps, F trips freed per step and K cabs per step. The full
+search stops fitting in 30 s somewhere between 300 cabs (6.8 s) and 1,000 (59 s); `BENCHMARK.md` has the measurements.
+
+**Optimality:** a Hopcroft-Karp matching over "this cab or trip can reach that next trip in time" gives the minimum backup
+trips in any plan. It is sound because the traffic model is FIFO: leaving later never arrives earlier. It ignores
+battery, so some of the reported gap may be out of reach.
 
 ## Drift re-plan
 
@@ -60,7 +71,7 @@ sequenceDiagram
     E->>DB: Lock the shift's row
     E->>DB: Idempotency key seen?
     alt seen before
-        DB-->>Op: Replay stored response
+        DB-->>Op: Replay stored response, or 409 if the event differs
     else new
         E->>DB: Sequence newer than cab's last?
         Note over E,DB: Older gets 409 and nothing changes
@@ -77,66 +88,49 @@ sequenceDiagram
     end
 ```
 
-A snapshot turns finished activities into history and starts each cab from where it really is. Activities in
-progress stay, because they cannot be undone. The same validator can then check the rest of the shift.
-
-Only the affected cabs and the 10 nearest are re-planned, or 40 if a trip would otherwise be lost and time remains.
-Every moved trip is a driver to call, so three rules keep the change small: a trip stays with its cab whenever that
-cab can still do it, a cab whose situation did not change keeps its exact steps, and a trip that must move prefers a
-cab that can still do its own next trip. These rules took one demo event
-from 37 moved trips to 7, and one charger failure from 67 to 0.
+Only the affected cabs and the 10 nearest are re-planned, or 40 if a trip would otherwise be lost. Every moved trip is a
+driver to call, so a trip stays with its cab whenever that cab can still do it, a cab whose situation did not change
+keeps its exact steps, and a trip that must move prefers a cab that can still do its own next trip.
 
 ## Failure modes
 
-| Failure | What happens | Evidence |
-|---|---|---|
-| Duplicate event | Stored response replayed, no new version | `ApiTest` |
-| Out-of-order event | `409 EVENT_OUT_OF_ORDER`, no change | `ApiTest` |
-| Late event from another cab | Applied at the plan's current clock, which never goes backwards; lag recorded | Designed, metric exposed |
-| Concurrent events on one shift | Serialised by the row lock, also across instances | `ApiTest`, 50 events on one instance |
-| Charger fails | Running session cut short, its bookings moved, plan revalidated | `ReplannerTest`, `ApiTest` |
-| Repair fails validation | `422`, previous version stays live, rejection remembered | `FailureInjectionTest` |
-| Planner exceeds its timeout | `503 PLANNER_TIMEOUT`, previous version stays live | `ApiTest` |
-| Fresh plan requested mid-shift | `409 SHIFT_IS_LIVE`, so real events are not overwritten | `ApiTest` |
-| Crash or database error during an event | Transaction rolls back, so version, sequence and response are all absent; the client retries with the same key | `FailureInjectionTest` breaks the save mid-event |
-| Cab too empty to finish its current trip | Cab leaves service for the rest of the shift, its current trip goes to backup, later trips move to other cabs; the response names the cab, and `cabs.stranded` and a warning log alert dispatch | `ReplannerTest`, `ApiTest` |
-| Event time after the shift ends, or a key reused for a different event | `422 EVENT_TIME_AFTER_SHIFT` or `409 IDEMPOTENCY_KEY_REUSED`, nothing changes | `ApiTest` |
+| What fails | What the user sees | How the system recovers | Evidence |
+|---|---|---|---|
+| Duplicate event | Stored response, `duplicate: true` | No new version | `ApiTest` |
+| Key reused for a different event | `409 IDEMPOTENCY_KEY_REUSED` | Nothing changes | `ApiTest` |
+| Out-of-order event | `409 EVENT_OUT_OF_ORDER` | Nothing changes | `ApiTest` |
+| Event time after the shift | `422 EVENT_TIME_AFTER_SHIFT` | Nothing recorded; retry with the right time | `ApiTest` |
+| Late event from another cab | `200`, with its effective time | Applied at the plan's clock, which never goes back; lag recorded | Designed, metric only |
+| Concurrent events on one shift | Each waits its turn | Row lock serialises them | `ApiTest`, 50 events on one instance |
+| Crash during an event | Error or timeout | Transaction rolls back everything; retry with the same key | `FailureInjectionTest` |
+| Database down | `503 DB_UNAVAILABLE` | Nothing diverges; retry when it returns | `GlobalExceptionHandlerTest` |
+| Charger fails | `200` with the diff | Running session cut short, bookings moved | `ReplannerTest`, `ApiTest` |
+| Cab too empty to finish, or still under the floor after charging | `200`, `strandedCab` set | Cab leaves service, its trip goes to backup, later trips move; metric and log alert dispatch | `ReplannerTest`, `ApiTest` |
+| Repair fails validation | `422` | Previous version stays live; rejection remembered | `FailureInjectionTest` |
+| Planner exceeds its timeout | `503 PLANNER_TIMEOUT` | Previous version stays live | `ApiTest` |
+| Fresh plan requested mid-shift | `409 SHIFT_IS_LIVE` | Real events are not overwritten | `ApiTest` |
 
 ## Trade-offs
 
-- **Consistency over availability for plan writes.** One writer per shift, in PostgreSQL. If the database is down,
-  events fail with `503` instead of diverging. Reads use a cache keyed by immutable version, so they are never stale
-  for a given version.
-- **Latency and stability over optimality in re-planning.** A repair looks at few cabs and keeps trips in place, so it
-  can leave a cheaper global plan undiscovered. The first plan is the place to optimise.
-- **Greedy multi-start instead of an exact solver.** Runs in seconds and the gap is measured. In the 300-cab case
-  there are at most 6 trips left to win, and the bound ignores battery, so some of those may be out of reach.
-- **Rule over cost at charging time.** Choosing the cheapest option per booking looked right but raised true cost by
-  about 10%, because cabs came back empty for the next peak. The planner charges little at the ₹12 peak and fills up
-  at cheaper rates.
-- **Cost and backups over spare time.** Plans have cabs arrive close to pickup, because the brief ranks backups first.
-  Traffic 10% slower than assumed would make about 420 of 1,450 pickups late if nobody re-plans (`BENCHMARK.md`). A time
-  buffer would fix that at a cost in backup trips; planning for 10% slower traffic costs about 26.
-- **A separate overnight schedule, not an end-of-shift limit.** Ending the shift low is the cheap choice while cabs can
-  refill at Rs 5, so the shift is not limited. `OvernightCharging` shows the refill fits, and the live plan never sees it.
-- **REST with idempotency keys instead of Kafka.** Enough for one deployment and a much smaller system to run. A broker
-  would be worth adding for many event sources or for replay.
-- **A full plan copy per version** (about 2 MB at 300 cabs) makes audit and recovery trivial, but needs diffs or
-  compaction for long retention.
+- **Consistency over availability for plan writes.** One writer per shift, in PostgreSQL. If the database is down, events
+  fail instead of diverging.
+- **Latency and stability over optimality in re-planning.** A repair looks at few cabs and can miss a cheaper plan.
+- **Heuristic over an exact solver.** It runs in seconds and the gap is measured.
+- **Backups over spare time.** Plans arrive close to pickup. Traffic 10% slower than assumed would make about 420 of 1,450
+  pickups late if nobody re-plans. Planning for that traffic instead costs about 26 backup trips.
+- **A separate overnight schedule, not an end-of-shift limit.** Ending low is the cheap choice while cabs can refill at
+  ₹5, and `OvernightCharging` shows the refill fits.
+- **REST with idempotency keys instead of Kafka.** Enough for one deployment and much smaller to run.
+- **A full plan copy per version** (about 2 MB) makes audit and recovery trivial, but limits a shift to about 18 events/s.
 
 ## Left out
 
-- Real road routing: distance is 1.3 x straight line, and traffic is one citywide table of time bands.
-- A hard deadline inside a re-plan: the 2 s budget decides whether to widen the search, but does not stop a running
-  pass. Measured latency is far below it (see `BENCHMARK.md`).
-- Interrupting a timed-out planner: the client gets its answer, but the threads finish in the background.
-- Real employee and fleet data: shifts come from a seeded generator, so testing other seeds shows the results are not
-  luck within this model, not how they behave on real demand.
-- Delay events: drift events report charge, so a cab running late does not trigger a re-plan yet.
-- A stranded cab returning to service: once out, it stays out for the shift.
-- A fallback for a rejected charger failure: the repair cannot normally fail, since it only shortens or moves sessions,
-  but if it did the charger would stay marked as working. The `422` and `validator.failures` would show it.
-- Mistyped event times within the shift: a wrong time before the shift ends still moves the clock forward.
-- Multi-day planning. The shift ends with a checked overnight schedule (`OvernightCharging`) instead of a limit on the
-  shift: ending low is the cheap choice while cabs can refill at the night rate. Tomorrow's demand is not considered.
-- Asymmetric JWT keys and key rotation.
+- Real road routing and zone speeds: one citywide table of estimated speeds. `BENCHMARK.md` measures the dependence.
+- Real fleet data: shifts come from a seeded generator, so testing other seeds says nothing about real demand.
+- Delay events: drift events report charge, so a cab running late does not trigger a re-plan.
+- Bringing a stranded cab back into service during the shift.
+- A hard deadline inside a re-plan, and stopping a timed-out planner: measured latency is far below the budget.
+- A fallback for a rejected charger failure: the repair only shortens or moves sessions, so it should not fail. If it did,
+  the charger would stay marked as working, with the `422` and `validator.failures` showing it.
+- Checking event times within the shift: a mistyped future time before the shift ends still moves the clock.
+- Multi-day planning, asymmetric JWT keys, key rotation and token revocation.

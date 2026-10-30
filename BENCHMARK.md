@@ -26,6 +26,10 @@ best of 16 greedy runs (multi-start), improved by 5,000 steps of local search.
 - Time grows about 10x per 3.3x fleet step, close to the expected O(T x V).
 - Lower bound calculation takes 0.1 s at 300 cabs and 5.1 s at 3,000.
 
+An early run showed much worse growth (1,503 s at 3,000 cabs) because every insertion scanned all hubs. Caching each
+location's hubs by distance and rejecting late cabs earlier gave a 10x gain at that size. The resulting plans were
+identical at 300 and 1,000 cabs.
+
 ## Other seeds
 
 Seed 42 is the demo and was also used for tuning, so its numbers could flatter the planner. The same 300-cab shift on
@@ -123,10 +127,6 @@ it under the true ones, with delays carrying over and no cab leaving earlier tha
 ```bash
 ./mvnw -q -pl planner-core exec:java -Dexec.mainClass=com.moveinsync.evfleet.core.cli.SpeedSensitivity
 ```
-
-An early run showed much worse growth (1,503 s at 3,000 cabs) because every insertion scanned all hubs. Caching each
-location's hubs by distance and rejecting late cabs earlier gave a 10x gain at that size. The resulting plans were
-identical at 300 and 1,000 cabs.
 
 ## Live re-planning, engine only
 

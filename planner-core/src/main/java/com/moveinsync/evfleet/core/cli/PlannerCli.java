@@ -17,6 +17,7 @@ import com.moveinsync.evfleet.core.planner.GreedyPlanner;
 import com.moveinsync.evfleet.core.planner.MultiStartPlanner;
 import com.moveinsync.evfleet.core.planner.PlannerConfig;
 import com.moveinsync.evfleet.core.planner.LocalSearch;
+import com.moveinsync.evfleet.core.planner.OvernightCharging;
 import com.moveinsync.evfleet.core.planner.Replanner;
 import com.moveinsync.evfleet.core.util.Clock;
 import com.moveinsync.evfleet.core.validate.PlanValidator;
@@ -94,6 +95,9 @@ public final class PlannerCli {
         double netCost = MultiStartPlanner.netCostRupees(scenario, plan);
         System.out.printf("Fleet ends the shift with %.0f kWh; cost including overnight refill to the starting charge: Rs %.2f%n",
                 endKWh, netCost);
+        OvernightCharging.Result night = new OvernightCharging().schedule(scenario, plan);
+        System.out.printf("Overnight: %d cabs back to %.0f%% by %s for Rs %.0f, %d not ready%n", night.cabsCharged(),
+                OvernightCharging.DEFAULT_TARGET_FRACTION * 100, Clock.format(night.lastFinish()), night.costRupees(), night.notReady().size());
         System.out.printf("Lower bound on backup trips: %d (intrinsic %d, unreachable %d, concurrency %d [peak %d], energy %d, chains %d)"
                         + " -> gap <= %d trips%n", lb.unassignedLowerBound(), lb.intrinsicallyInfeasible(),
                 lb.unreachable(), lb.concurrencyExcess(), lb.peakConcurrentTrips(), lb.energyExcess(), lb.chainExcess(),

@@ -20,6 +20,22 @@ exceeding its chargers, or any trip finishing late. Trips no EV can cover go to 
 | Cost incl. overnight refill | ₹24,121 (charging plus refilling every cab to its starting charge at ₹5) |
 | Tomorrow | every cab can be back at 60% by 03:52 at the ₹5 rate (`OvernightCharging`, checked by the validator) |
 
+The cost line assumes refilling to each cab's own starting charge. The overnight schedule is a real, checked booking to a
+flat 60% instead, so its ₹12,744 is a different target and does not add up to the same figure.
+
+**Measured on:** MacBook Air, Apple M2, 8 cores, 8 GB RAM, OpenJDK 24; Docker figures in a 4-CPU, 4 GB Colima VM.
+
+| Benchmark (300 cabs) | Result |
+|---|---|
+| Full plan | 6.8 s, under the 30 s target |
+| Live re-plan, engine | p50 5 ms, p99 17 ms, 146 events/s, against a 2 s target |
+| Event through the API, one client | p50 53 ms, p99 75 ms, 18.5 events/s |
+| Event through the API, 8 clients | p50 408 ms, p99 562 ms, 18.9 events/s |
+
+**Main trade-offs:** consistency over availability for plan writes (one writer per shift, so events fail if the database
+is down), stability over optimality in re-planning (few cabs touched, so a cheaper plan can be missed), and fewest backups
+over spare time (plans depend on the traffic estimate). [DESIGN.md](DESIGN.md) has the full list and what was left out.
+
 Against the single greedy run with a fixed 80% charge target (the starting point), the cost including refill fell from
 ₹30,416 to ₹24,121 (−21%), with 4 more trips covered. On 20 other seeds the plan is also valid and on time, with an
 average of 53 backups and a gap of 6.7; seed 42 is typical. See [BENCHMARK.md](BENCHMARK.md), including how much the
@@ -68,14 +84,14 @@ plan for the rest of the shift:
 
 | Event (seed 42, single greedy plan) | Old plan now | Re-plan | Changes |
 |---|---|---|---|
-| CAB-007 reports 22% at 19:30 (plan: 47%) | INVALID (9 violations) | VALID, about 40 ms | 5 cabs, 7 trips moved, 0 to backup |
+| CAB-007 reports 22% at 19:30 (plan: 47%) | INVALID (9 violations) | VALID, about 40 ms | 5 cabs, 7 trips moved, 0 to backup (4 trips on the final plan) |
 | Charger H1-C1 fails at 19:00 | INVALID (29 violations) | VALID, 40 ms | 0 trips moved; 25 sessions moved to other chargers |
 | 200 random drift / failure events (final plan) | | 200/200 VALID | p50 5 ms · p99 17 ms · max 18 ms (budget 2 s) |
 
 ```bash
 ./mvnw -q -pl planner-core exec:java -Dexec.args="--idle 2 --drift CAB-007@19:30=22%"
 ./mvnw -q -pl planner-core exec:java -Dexec.args="--idle 2 --fail-charger H1-C1@19:00"
-./mvnw -q -pl planner-core exec:java -Dexec.args="--idle 2 --replan-bench 200"
+./mvnw -q -pl planner-core exec:java -Dexec.args="--replan-bench 200"
 ```
 
 ## Run the service
@@ -114,6 +130,7 @@ curl -s localhost:8080/shifts/1/events/soc -H "Authorization: Bearer $TOKEN" -H 
 | `POST /shifts/{id}/chargers/{chargerId}/failure` | OPERATOR, ADMIN | Charger failure; returns the diff |
 | `GET /me/trip` | EMPLOYEE | Own trip only |
 | `GET /actuator/prometheus`, `/actuator/health` | anyone | Metrics and health |
+| `GET /actuator/metrics` | any signed-in user | Same metrics as JSON |
 
 How the service behaves under failure:
 
@@ -129,15 +146,20 @@ How the service behaves under failure:
 - **Late events** take effect at the plan's current clock, which never goes backwards.
 - **Tenancy:** the tenant comes from the signed token and every lookup takes it, so another tenant's shift is a
   `404`, not a `403`. Errors are RFC 7807 JSON with a stable `code` and no internals.
-- **Caching:** parsed plans are cached by (shift, version). Versions are immutable, so entries cannot go stale, and
-  writers fill the cache only after commit.
-- **Observability:** `replan.latency`, `plan.latency`, `events{type,outcome}`, `event.lag.minutes`,
-  `validator.failures`, `planner.timeouts`, `cabs.stranded`, `unassigned.trips`; JSON logs with a correlation id per request. Logs
-  carry ids only, no credentials or employee locations.
+- **Caching:** parsed plans are cached in memory by (shift, version), up to 64 entries with size-based eviction and no
+  time limit. Versions are immutable and each request reads the current version number from the database, so a plan read
+  is never stale, and writers fill the cache only after commit. What can go stale is the token: a changed role, tenant
+  or trip takes effect when it expires, at most 8 hours later.
+- **Observability:** the counters for a 3 AM call are lag `event.lag.minutes`, error rate
+  `http.server.requests` (by status), rejections `events{outcome=rejected}` and `validator.failures`, retries
+  `events.retries`, and queue depth `events.in.flight` (events applied or waiting on a shift's lock). Also `replan.latency`,
+  `plan.latency`, `planner.timeouts`, `cabs.stranded` and `unassigned.trips` (the most recently published plan on this
+  instance, so 0 after a restart). JSON logs carry a correlation id per request, and ids only, no credentials or employee
+  locations.
 
-`ApiTest` covers all of this over HTTP against a real PostgreSQL (embedded, so `./mvnw test` needs no Docker),
-including 50 concurrent events producing strictly ordered, valid versions. `FailureInjectionTest` breaks a save partway
-through an event and checks that nothing was kept and the same key can retry.
+`ApiTest` runs the main flows over HTTP against a real PostgreSQL (embedded, so `./mvnw test` needs no Docker), including
+50 concurrent events producing strictly ordered, valid versions. `FailureInjectionTest` breaks a save partway through an
+event and checks that nothing was kept and the same key can retry. Late events are by design, with no test.
 
 ## Run the engine alone
 

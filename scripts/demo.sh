@@ -28,7 +28,7 @@ call() {
     status=${output##*$'\n'}
     body=${output%$'\n'*}
     echo "HTTP $status"
-    echo "$body" | python3 -m json.tool | head -n "${MAX_LINES:-30}"
+    echo "$body" | python3 -m json.tool 2>/dev/null | head -n "${MAX_LINES:-30}" || true
 }
 
 ADMIN=$(login admin@acme)
