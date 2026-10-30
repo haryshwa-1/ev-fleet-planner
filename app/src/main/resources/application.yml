@@ -1,0 +1,48 @@
+spring:
+  application:
+    name: ev-fleet-planner
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/evfleet}
+    username: ${DB_USER:evfleet}
+    password: ${DB_PASSWORD:evfleet}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+  threads:
+    virtual:
+      enabled: true
+
+server:
+  error:
+    include-stacktrace: never
+    include-message: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    distribution:
+      percentiles-histogram:
+        replan.latency: true
+      percentiles:
+        replan.latency: 0.5,0.95,0.99
+
+app:
+  jwt:
+    # Development default; docker-compose and production must supply their own.
+    secret: ${JWT_SECRET:dev-only-secret-change-me-at-least-32-bytes}
+    ttl-minutes: 480
+  planner:
+    timeout-millis: 30000
+  seed:
+    enabled: ${SEED_ENABLED:true}
+    password: ${SEED_PASSWORD:demo-password}
