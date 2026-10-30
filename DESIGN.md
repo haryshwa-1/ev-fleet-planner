@@ -11,7 +11,7 @@ flowchart LR
         svc --> store[PlanStore with version-keyed cache]
     end
     subgraph core [planner-core: pure Java, no Spring]
-        planner[GreedyPlanner and MultiStartPlanner]
+        planner[GreedyPlanner, MultiStartPlanner and LocalSearch]
         replanner[Snapshot, Replanner and PlanDiff]
         validator[PlanValidator]
         bound[LowerBoundCalculator]
@@ -33,10 +33,14 @@ charging stop at one of its two nearest hubs. The lowest score wins; the score i
 time and a low-charge penalty, all in km-equivalents. A cab accepts a trip only if it can still reach a charger
 afterwards in worst-case traffic, so no later step can strand it. 16 configurations of the scoring weights run in
 parallel, and the plan with the fewest backup trips, then the lowest cost including the overnight refill, wins.
+Local search then improves that plan: it clears the later work of 5 cabs near a backup trip, rebuilds it with the same
+insertion rule plus some randomness, and keeps the result only if it is better. It runs a fixed 5,000 steps with a fixed
+seed, so results repeat on any machine, and it returns the original plan if the result ever fails the validator.
 
 **Complexity:** O(T log T + T x V x (1 + H x C x log S)) time per greedy run and O(V + T + S) memory, for T trips,
 V cabs, H hubs tried, C chargers per hub and S bookings per charger. The charging branch only runs for cabs that
-need it, so it behaves close to O(T x V) in practice (measured in `BENCHMARK.md`). Multi-start multiplies that by 16 and divides by the cores.
+need it, so it behaves close to O(T x V) in practice (measured in `BENCHMARK.md`). Multi-start multiplies that by 16 and divides by the cores. Local search adds
+O(S x (V + F x K x H x C x log B)) for S steps, F trips freed per step, K cabs per step and B bookings per charger.
 
 **Optimality:** a Hopcroft-Karp matching over "this cab or trip can reach that next trip in time" gives the minimum
 backup trips in any plan. That bound is sound because the traffic model is FIFO: leaving later never arrives earlier,
@@ -106,10 +110,15 @@ from 37 moved trips to 7, and one charger failure from 67 to 0.
 - **Latency and stability over optimality in re-planning.** A repair looks at few cabs and keeps trips in place, so it
   can leave a cheaper global plan undiscovered. The first plan is the place to optimise.
 - **Greedy multi-start instead of an exact solver.** Runs in seconds and the gap is measured. In the 300-cab case
-  there are at most 8 trips left to win.
+  there are at most 6 trips left to win, and the bound ignores battery, so some of those may be out of reach.
 - **Rule over cost at charging time.** Choosing the cheapest option per booking looked right but raised true cost by
   about 10%, because cabs came back empty for the next peak. The planner charges little at the ₹12 peak and fills up
   at cheaper rates.
+- **Cost and backups over spare time.** Plans have cabs arrive close to pickup, because the brief ranks backups first.
+  Traffic 10% slower than assumed would make about 420 of 1,450 pickups late if nobody re-plans (`BENCHMARK.md`). A time
+  buffer would fix that at a cost in backup trips; planning for 10% slower traffic costs about 26.
+- **A separate overnight schedule, not an end-of-shift limit.** Ending the shift low is the cheap choice while cabs can
+  refill at Rs 5, so the shift is not limited. `OvernightCharging` shows the refill fits, and the live plan never sees it.
 - **REST with idempotency keys instead of Kafka.** Enough for one deployment and a much smaller system to run. A broker
   would be worth adding for many event sources or for replay.
 - **A full plan copy per version** (about 2 MB at 300 cabs) makes audit and recovery trivial, but needs diffs or
@@ -121,7 +130,13 @@ from 37 moved trips to 7, and one charger failure from 67 to 0.
 - A hard deadline inside a re-plan: the 2 s budget decides whether to widen the search, but does not stop a running
   pass. Measured latency is far below it (see `BENCHMARK.md`).
 - Interrupting a timed-out planner: the client gets its answer, but the threads finish in the background.
-- Real employee and fleet data: shifts come from a seeded generator.
+- Real employee and fleet data: shifts come from a seeded generator, so testing other seeds shows the results are not
+  luck within this model, not how they behave on real demand.
+- Delay events: drift events report charge, so a cab running late does not trigger a re-plan yet.
+- A stranded cab returning to service: once out, it stays out for the shift.
+- A fallback for a rejected charger failure: the repair cannot normally fail, since it only shortens or moves sessions,
+  but if it did the charger would stay marked as working. The `422` and `validator.failures` would show it.
+- Mistyped event times within the shift: a wrong time before the shift ends still moves the clock forward.
 - Multi-day planning. The shift ends with a checked overnight schedule (`OvernightCharging`) instead of a limit on the
   shift: ending low is the cheap choice while cabs can refill at the night rate. Tomorrow's demand is not considered.
 - Asymmetric JWT keys and key rotation.
