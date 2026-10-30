@@ -1,0 +1,41 @@
+# docker compose up --build  ->  API on http://localhost:8080 with demo data.
+# The secrets below are for the local demo only; set real ones in the environment for anything else.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: evfleet
+      POSTGRES_USER: evfleet
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-evfleet}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evfleet -d evfleet"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/evfleet
+      DB_USER: evfleet
+      DB_PASSWORD: ${DB_PASSWORD:-evfleet}
+      JWT_SECRET: ${JWT_SECRET:-local-demo-secret-not-for-production-use}
+      SEED_ENABLED: "true"
+      SEED_PASSWORD: ${SEED_PASSWORD:-demo-password}
+      LOGGING_STRUCTURED_FORMAT_CONSOLE: logstash
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8080 && printf 'GET /actuator/health/readiness HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+
+volumes:
+  pgdata:

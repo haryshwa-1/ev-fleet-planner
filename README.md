@@ -4,8 +4,8 @@ MoveInSync case study 6: plan an evening shift for an electric cab fleet — whi
 and when and where each cab charges — without any cab running below its battery floor, any hub
 exceeding its chargers, or any trip finishing late. Trips no EV can cover go to backup cabs with a reason.
 
-> Status: the planning engine and live re-planning (`planner-core`) are complete and tested. The
-> Spring Boot API and the full design write-up are in progress.
+> Status: the planning engine, live re-planning and the Spring Boot service are complete and tested.
+> The full design write-up and benchmark are in progress.
 
 ## Results (300 cabs, 5 hubs / 40 chargers, 1,500 trips, seed 42)
 
@@ -74,12 +74,67 @@ plan for the rest of the shift:
 ./mvnw -q -pl planner-core exec:java -Dexec.args="--idle 2 --replan-bench 200"
 ```
 
-## Run it
+## Run the service
+
+Requires only Docker. The first build downloads dependencies and takes several minutes.
+
+```bash
+docker compose up --build
+```
+
+This starts PostgreSQL and the API on `localhost:8080`, and seeds two demo tenants: `acme` with the planned
+300-cab shift (id 1) and `globex` with a small one (id 2). Users are `admin@acme`, `operator@acme`,
+`employee@acme` and `admin@globex`, all with password `demo-password` (demo values, overridable with
+`SEED_PASSWORD` and `JWT_SECRET`).
+
+```bash
+TOKEN=$(curl -s localhost:8080/auth/login -H 'content-type: application/json' \
+  -d '{"username":"operator@acme","password":"demo-password"}' | sed 's/.*"token":"\([^"]*\)".*/\1/')
+
+curl -s localhost:8080/shifts/1/plan/summary -H "Authorization: Bearer $TOKEN"
+
+curl -s localhost:8080/shifts/1/events/soc -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"cabId":"CAB-007","socPercent":22,"observedAt":"19:30","seq":1,"idempotencyKey":"demo-1"}'
+```
+
+| Endpoint | Role | Purpose |
+|---|---|---|
+| `POST /auth/login` | anyone | Get a JWT |
+| `POST /admin/shifts` | ADMIN | Create a shift from generator parameters |
+| `POST /shifts/{id}/plan` | ADMIN | Run the planner; refused once live events were applied |
+| `GET /shifts/{id}/plan/summary`, `/unassigned`, `/validate`, `/versions` | OPERATOR, ADMIN | Live plan, backup reasons, validator, audit trail |
+| `GET /shifts/{id}/cabs/{cabId}/timeline` | OPERATOR, ADMIN | A cab's whole day with charge at each step |
+| `POST /shifts/{id}/events/soc` | OPERATOR, ADMIN | Battery drift; returns the diff |
+| `POST /shifts/{id}/chargers/{chargerId}/failure` | OPERATOR, ADMIN | Charger failure; returns the diff |
+| `GET /me/trip` | EMPLOYEE | Own trip only |
+| `GET /actuator/prometheus`, `/actuator/health` | anyone | Metrics and health |
+
+How the service behaves under failure:
+
+- **Single writer per shift:** each event runs in one transaction holding the shift's PostgreSQL row lock, also
+  across app instances. The new version, sequence number and stored response commit together or not at all.
+- **Duplicates and ordering:** a repeated idempotency key replays the stored response; a sequence number not
+  newer than the cab's last one gets `409 EVENT_OUT_OF_ORDER`.
+- **Validator as a gate:** a repair the validator rejects returns `422` and the previous version stays live
+  (for example a cab too empty to finish the trip it is on). A planner timeout returns `503` and keeps the last plan.
+- **Late events** take effect at the plan's current clock, which never goes backwards.
+- **Tenancy:** the tenant comes from the signed token and every lookup takes it, so another tenant's shift is a
+  `404`, not a `403`. Errors are RFC 7807 JSON with a stable `code` and no internals.
+- **Caching:** parsed plans are cached by (shift, version). Versions are immutable, so entries cannot go stale, and
+  writers fill the cache only after commit.
+- **Observability:** `replan.latency`, `plan.latency`, `events{type,outcome}`, `event.lag.minutes`,
+  `validator.failures`, `planner.timeouts`, `unassigned.trips`; JSON logs with a correlation id per request. Logs
+  carry ids only, no credentials or employee locations.
+
+`ApiTest` covers all of this over HTTP against a real PostgreSQL (embedded, so `./mvnw test` needs no Docker),
+including 50 concurrent events producing strictly ordered, valid versions.
+
+## Run the engine alone
 
 Requires Java 21+. The Maven wrapper is included, so Maven does not need to be installed.
 
 ```bash
-./mvnw test                                                   # 75 tests
+./mvnw test                                                   # 92 tests
 ./mvnw -q -DskipTests install
 ./mvnw -q -pl planner-core exec:java -Dexec.args="--timeline CAB-007"
 ```

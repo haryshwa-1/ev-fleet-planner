@@ -1,0 +1,7 @@
+**/target
+out
+.git
+.idea
+.vscode
+*.iml
+.DS_Store
