@@ -11,12 +11,18 @@ exceeding its chargers, or any trip finishing late. Trips no EV can cover go to 
 
 | | |
 |---|---|
-| Planning time | ~1.1 s (target: under 30 s) |
-| Independent validator | VALID — 37,976 checks, 0 violations, lowest SoC 15.5% (floor 15%) |
-| Coverage | 1,444 trips by EV, 56 to backup (96.3%) |
-| Proven lower bound | any plan needs ≥ 46 backup trips, so this plan is at most 10 trips from optimal |
-| Backup reasons | 41 no cab can reach the pickup in time · 13 not enough charge · 2 chargers full |
-| Charging | 333 sessions, 2,659 kWh, ₹22,853 (42% of energy bought at the ₹12 peak rate) |
+| Planning time | ~5.5 s for 16 parallel greedy runs on 8 cores (target: under 30 s) |
+| Independent validator | VALID — 36,191 checks, 0 violations, lowest SoC 15.2% (floor 15%) |
+| Coverage | 1,446 trips by EV, 54 to backup (96.4%) |
+| Proven lower bound | any plan needs ≥ 46 backup trips, so this plan is at most 8 trips from optimal |
+| Backup reasons | 36 no cab can reach the pickup in time · 15 not enough charge · 3 chargers full |
+| Charging | 257 sessions, 2,130 kWh, ₹15,218 — 58% of energy at the ₹5 off-peak rate, 18% at the ₹12 peak |
+| Cost incl. overnight refill | ₹25,342 (charging plus refilling every cab to its starting charge at ₹5) |
+
+Against the single greedy run with a fixed 80% charge target (the starting point), tariff-aware charging and
+multi-start cover 2 more trips and cut the cost including refill from ₹30,416 to ₹25,342 (−17%). Raw charging
+spend alone fell further (₹22,797 → ₹15,218), but part of that is cabs ending the shift emptier, which is why
+the refill-inclusive figure is the one plans are compared on.
 
 ## How it works
 
@@ -27,6 +33,12 @@ exceeding its chargers, or any trip finishing late. Trips no EV can cover go to 
 2. **Greedy insertion** — trips in start-time order; each is offered to every cab, either directly or
    after a charging stop at one of its nearest hubs. The cheapest feasible option wins. A cab only takes
    a trip if it can still reach a charger afterwards in worst-case traffic.
+   - **Tariff-aware charging:** for each free charger slot the cab tries plugging in straight away and at
+     every later tariff change it has time for (e.g. waiting until 22:00 for ₹5). At the ₹12 peak it buys
+     little more than the next trip needs; at normal or off-peak prices it fills to the target. A session
+     that crosses a tariff boundary pays each minute at that minute's rate.
+   - **Multi-start:** 16 configurations of the scoring knobs run in parallel; the plan with the fewest backup
+     trips, then the lowest cost including overnight refill, wins. Results are deterministic.
 3. **Independent validator** — recomputes every plan from scratch and checks 14 hard rules
    (battery floor, charger overlap, hub capacity, charging curve, trip deadlines, session cost, …).
    It shares no code with the planner's feasibility checks.
@@ -40,13 +52,15 @@ exceeding its chargers, or any trip finishing late. Trips no EV can cover go to 
 Requires Java 21+. The Maven wrapper is included, so Maven does not need to be installed.
 
 ```bash
-./mvnw test                                                   # 57 tests
+./mvnw test                                                   # 64 tests
 ./mvnw -q -DskipTests install
 ./mvnw -q -pl planner-core exec:java -Dexec.args="--timeline CAB-007"
 ```
 
 Output files are written to `out/` (`plan.json`, `validator-report.json`, `summary.json`).
-Other options: `--cabs`, `--hubs`, `--chargers-per-hub`, `--trips`, `--seed`.
+Scenario options: `--cabs`, `--hubs`, `--chargers-per-hub`, `--trips`, `--seed`. Passing any planner knob
+(`--idle`, `--lowSoc`, `--lowSocPenalty`, `--target`, `--peakTarget`, `--hubsToTry`) runs that single
+configuration instead of the multi-start.
 
 Java 24 prints `WARNING:` lines from Maven's own libraries; they are harmless and unrelated to this code.
 

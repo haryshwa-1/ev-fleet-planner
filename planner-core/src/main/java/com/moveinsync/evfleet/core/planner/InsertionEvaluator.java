@@ -137,16 +137,46 @@ public final class InsertionEvaluator {
 
                 ChargerSchedule.Gap gap = schedule.firstGap(arriveHub, leaveBy, minMinutes);
                 if (gap == null) continue;
-                double target = Math.max(required, v.batteryKWh() * config.chargeTargetFraction());
-                int wanted = (int) Math.ceil(physics.curve().minutesToReach(v.batteryKWh(), socAtHub,
-                        Math.min(target, v.batteryKWh()), power) - 1e-9);
-                int duration = Math.max(minMinutes, Math.min(wanted, gap.length()));
-                Insertion option = build(cab, trip, hub, schedule, depart, toHubKm, arriveHub, socAtHub,
-                        gap.start(), duration, toPickupKm, power);
-                if (option != null && (best == null || option.score() < best.score())) best = option;
+                // Try plugging in now and at every later tariff change the gap allows; the score
+                // keeps the cheapest. How much to charge depends on the price at the start.
+                for (int start : candidateStarts(gap.start(), gap.end() - minMinutes)) {
+                    int duration = sessionMinutes(v, socAtHub, required, power, start, gap.end(), minMinutes);
+                    Insertion option = build(cab, trip, hub, schedule, depart, toHubKm, arriveHub, socAtHub,
+                            start, duration, toPickupKm, power);
+                    if (option != null && (best == null || option.score() < best.score())) best = option;
+                }
             }
         }
         return best;
+    }
+
+    /**
+     * Start times worth trying in a gap: its first minute and every minute in (from, latest] where
+     * the tariff changes. Between two changes the price is flat, so starting later gains nothing.
+     */
+    private List<Integer> candidateStarts(int from, int latest) {
+        List<Integer> starts = new ArrayList<>(4);
+        starts.add(from);
+        for (int m = from + 1; m <= latest; m++) {
+            if (tariff.rateAt(m) != tariff.rateAt(m - 1)) starts.add(m);
+        }
+        return starts;
+    }
+
+    /**
+     * How long to charge from {@code start}: at least enough for this trip, and up to the target
+     * share while the gap lasts. At a peak rate the target is lower, so the cab buys little more than
+     * it needs and tops up when power is cheaper. (Charging "just enough" at every price looks
+     * cheapest per booking but leaves cabs empty for the next peak; the multi-start comparison
+     * showed ~10% higher net cost.)
+     */
+    private int sessionMinutes(Vehicle v, double socAtHub, double required, double power, int start, int gapEnd,
+                               int minMinutes) {
+        boolean peak = tariff.rateAt(start) > tariff.defaultRate();
+        double fraction = peak ? config.peakTargetFraction() : config.chargeTargetFraction();
+        double target = Math.min(Math.max(required, v.batteryKWh() * fraction), v.batteryKWh());
+        int wanted = (int) Math.ceil(physics.curve().minutesToReach(v.batteryKWh(), socAtHub, target, power) - 1e-9);
+        return Math.max(minMinutes, Math.min(wanted, gapEnd - start));
     }
 
     private Insertion build(CabState cab, Trip trip, Hub hub, ChargerSchedule schedule, int depart, double toHubKm,

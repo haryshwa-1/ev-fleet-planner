@@ -6,6 +6,8 @@ package com.moveinsync.evfleet.core.planner;
  *
  * @param minChargeMinutes   shortest session worth plugging in for
  * @param chargeTargetFraction charge up to this share when time allows (the fast part of the curve)
+ * @param peakTargetFraction the same for a session that starts at a peak tariff: charge little more
+ *                           than the next trip needs and top up when power is cheaper
  * @param hubsToTry          nearest hubs considered for a charge-then-serve option
  * @param lowSocFraction     a cab ending a trip below this share is nudged to charge first
  * @param lowSocPenaltyKm    how strongly (in km-equivalents) that nudge applies
@@ -17,6 +19,7 @@ package com.moveinsync.evfleet.core.planner;
 public record PlannerConfig(
         int minChargeMinutes,
         double chargeTargetFraction,
+        double peakTargetFraction,
         int hubsToTry,
         double lowSocFraction,
         double lowSocPenaltyKm,
@@ -24,23 +27,30 @@ public record PlannerConfig(
         double rupeesPerKmEquivalent,
         double idleKmPerHour) {
 
+    /** Option names accepted by {@link #with}, e.g. from the command line. */
+    public static final java.util.List<String> OPTIONS =
+            java.util.List.of("lowSoc", "lowSocPenalty", "target", "peakTarget", "hubsToTry", "idle");
+
     public PlannerConfig with(String key, double value) {
         return switch (key) {
-            case "lowSoc" -> new PlannerConfig(minChargeMinutes, chargeTargetFraction, hubsToTry, value, lowSocPenaltyKm,
-                    chargeDetourPenaltyKm, rupeesPerKmEquivalent, idleKmPerHour);
-            case "lowSocPenalty" -> new PlannerConfig(minChargeMinutes, chargeTargetFraction, hubsToTry, lowSocFraction,
-                    value, chargeDetourPenaltyKm, rupeesPerKmEquivalent, idleKmPerHour);
-            case "target" -> new PlannerConfig(minChargeMinutes, value, hubsToTry, lowSocFraction, lowSocPenaltyKm,
-                    chargeDetourPenaltyKm, rupeesPerKmEquivalent, idleKmPerHour);
-            case "hubs" -> new PlannerConfig(minChargeMinutes, chargeTargetFraction, (int) value, lowSocFraction,
+            case "lowSoc" -> new PlannerConfig(minChargeMinutes, chargeTargetFraction, peakTargetFraction, hubsToTry,
+                    value, lowSocPenaltyKm, chargeDetourPenaltyKm, rupeesPerKmEquivalent, idleKmPerHour);
+            case "lowSocPenalty" -> new PlannerConfig(minChargeMinutes, chargeTargetFraction, peakTargetFraction,
+                    hubsToTry, lowSocFraction, value, chargeDetourPenaltyKm, rupeesPerKmEquivalent, idleKmPerHour);
+            case "target" -> new PlannerConfig(minChargeMinutes, value, peakTargetFraction, hubsToTry, lowSocFraction,
                     lowSocPenaltyKm, chargeDetourPenaltyKm, rupeesPerKmEquivalent, idleKmPerHour);
-            case "idle" -> new PlannerConfig(minChargeMinutes, chargeTargetFraction, hubsToTry, lowSocFraction,
-                    lowSocPenaltyKm, chargeDetourPenaltyKm, rupeesPerKmEquivalent, value);
+            case "hubsToTry" -> new PlannerConfig(minChargeMinutes, chargeTargetFraction, peakTargetFraction,
+                    (int) value, lowSocFraction, lowSocPenaltyKm, chargeDetourPenaltyKm, rupeesPerKmEquivalent,
+                    idleKmPerHour);
+            case "idle" -> new PlannerConfig(minChargeMinutes, chargeTargetFraction, peakTargetFraction, hubsToTry,
+                    lowSocFraction, lowSocPenaltyKm, chargeDetourPenaltyKm, rupeesPerKmEquivalent, value);
+            case "peakTarget" -> new PlannerConfig(minChargeMinutes, chargeTargetFraction, value, hubsToTry,
+                    lowSocFraction, lowSocPenaltyKm, chargeDetourPenaltyKm, rupeesPerKmEquivalent, idleKmPerHour);
             default -> throw new IllegalArgumentException("unknown planner option " + key);
         };
     }
 
     public static PlannerConfig defaults() {
-        return new PlannerConfig(10, 0.80, 2, 0.50, 15.0, 3.0, 20.0, 2.0);
+        return new PlannerConfig(10, 0.80, 0.50, 2, 0.50, 15.0, 3.0, 20.0, 2.0);
     }
 }

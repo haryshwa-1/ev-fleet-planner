@@ -14,6 +14,7 @@ import com.moveinsync.evfleet.core.plan.ReasonCode;
 import com.moveinsync.evfleet.core.plan.TripLeg;
 import com.moveinsync.evfleet.core.plan.UnassignedTrip;
 import com.moveinsync.evfleet.core.planner.GreedyPlanner;
+import com.moveinsync.evfleet.core.planner.MultiStartPlanner;
 import com.moveinsync.evfleet.core.planner.PlannerConfig;
 import com.moveinsync.evfleet.core.util.Clock;
 import com.moveinsync.evfleet.core.validate.PlanValidator;
@@ -51,10 +52,25 @@ public final class PlannerCli {
 
         long t0 = System.nanoTime();
         PlannerConfig config = PlannerConfig.defaults();
-        for (String key : List.of("lowSoc", "lowSocPenalty", "target", "hubs", "idle")) {
-            if (opts.containsKey(key)) config = config.with(key, Double.parseDouble(opts.get(key)));
+        boolean tuned = false;
+        for (String key : PlannerConfig.OPTIONS) {
+            if (opts.containsKey(key)) {
+                config = config.with(key, Double.parseDouble(opts.get(key)));
+                tuned = true;
+            }
         }
-        Plan plan = new GreedyPlanner(config).plan(scenario);
+        // Explicit options mean "try this one configuration"; otherwise search over the standard set.
+        Plan plan;
+        if (tuned) {
+            plan = new GreedyPlanner(config).plan(scenario);
+        } else {
+            MultiStartPlanner.Result result = MultiStartPlanner.standard().plan(scenario);
+            plan = result.best().plan();
+            System.out.printf("Multi-start: %d configurations, best %s (backup trips ranged %d-%d)%n",
+                    result.runs().size(), result.best().config(),
+                    result.runs().stream().mapToInt(MultiStartPlanner.Run::backupTrips).min().orElse(0),
+                    result.runs().stream().mapToInt(MultiStartPlanner.Run::backupTrips).max().orElse(0));
+        }
         long planMs = (System.nanoTime() - t0) / 1_000_000;
 
         long t1 = System.nanoTime();
@@ -69,6 +85,10 @@ public final class PlannerCli {
                 total - backup, total, backup, 100.0 * (total - backup) / total);
         System.out.printf("Charging: %d sessions, Rs %.2f; empty driving %.0f km%n",
                 plan.chargingSessionCount(), plan.totalChargingCost(), plan.deadheadKm());
+        double endKWh = MultiStartPlanner.endOfShiftEnergyKWh(scenario, plan);
+        double netCost = MultiStartPlanner.netCostRupees(scenario, plan);
+        System.out.printf("Fleet ends the shift with %.0f kWh; cost including overnight refill to the starting charge: Rs %.2f%n",
+                endKWh, netCost);
         System.out.printf("Lower bound on backup trips: %d (intrinsic %d, unreachable %d, concurrency %d [peak %d], energy %d, chains %d)"
                         + " -> gap <= %d trips%n", lb.unassignedLowerBound(), lb.intrinsicallyInfeasible(),
                 lb.unreachable(), lb.concurrencyExcess(), lb.peakConcurrentTrips(), lb.energyExcess(), lb.chainExcess(),
@@ -94,6 +114,8 @@ public final class PlannerCli {
         summary.put("tripsBackup", backup);
         summary.put("backupReasons", reasons);
         summary.put("chargingCostRupees", Math.round(plan.totalChargingCost() * 100) / 100.0);
+        summary.put("endOfShiftEnergyKWh", Math.round(endKWh * 10) / 10.0);
+        summary.put("netCostRupees", Math.round(netCost * 100) / 100.0);
         summary.put("lowerBound", lb);
         summary.put("valid", report.valid());
         json.writeValue(out.resolve("summary.json").toFile(), summary);
