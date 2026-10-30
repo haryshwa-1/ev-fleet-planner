@@ -38,11 +38,12 @@ management:
 
 app:
   jwt:
-    # Development default; docker-compose and production must supply their own.
-    secret: ${JWT_SECRET:dev-only-secret-change-me-at-least-32-bytes}
+    # No default: the app refuses to start without a secret. docker-compose supplies a local demo one.
+    secret: ${JWT_SECRET}
     ttl-minutes: 480
   planner:
     timeout-millis: 30000
   seed:
-    enabled: ${SEED_ENABLED:true}
-    password: ${SEED_PASSWORD:demo-password}
+    # Demo accounts are opt-in, and need a password when turned on.
+    enabled: ${SEED_ENABLED:false}
+    password: ${SEED_PASSWORD}
