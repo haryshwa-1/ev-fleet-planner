@@ -1,0 +1,1134 @@
+{
+  "info": {
+    "name": "EV Fleet Planner",
+    "description": "Run in order against a freshly started `docker compose up`. Every request checks its own result. Demo password only.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "password",
+      "value": "demo-password"
+    },
+    {
+      "key": "shiftId",
+      "value": "1"
+    },
+    {
+      "key": "adminToken",
+      "value": ""
+    },
+    {
+      "key": "operatorToken",
+      "value": ""
+    },
+    {
+      "key": "employeeToken",
+      "value": ""
+    },
+    {
+      "key": "globexToken",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1 Login",
+      "item": [
+        {
+          "name": "Login admin@acme",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin@acme\",\n  \"password\": \"{{password}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('adminToken', pm.response.json().token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login operator@acme",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"operator@acme\",\n  \"password\": \"{{password}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('operatorToken', pm.response.json().token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login employee@acme",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"employee@acme\",\n  \"password\": \"{{password}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('employeeToken', pm.response.json().token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login admin@globex",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin@globex\",\n  \"password\": \"{{password}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('globexToken', pm.response.json().token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Wrong password is refused",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin@acme\",\n  \"password\": \"wrong\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 401', () => pm.response.to.have.status(401));",
+                  "pm.test(\"stable error code\", () => { const r = pm.response.json(); pm.expect(r.code === 'BAD_CREDENTIALS').to.be.true; });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2 Read the plan",
+      "item": [
+        {
+          "name": "Summary",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/shifts/{{shiftId}}/plan/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "shifts",
+                "{{shiftId}}",
+                "plan",
+                "summary"
+              ]
+            },
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test(\"300-cab shift\", () => { const r = pm.response.json(); pm.expect(r.totalTrips === 1500).to.be.true; });",
+                  "pm.test(\"planned within 30 s\", () => { const r = pm.response.json(); pm.expect(r.planningMillis < 30000).to.be.true; });",
+                  "pm.test(\"gap is reported\", () => { const r = pm.response.json(); pm.expect(r.gap >= 0).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Backup trips with reasons",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/shifts/{{shiftId}}/plan/unassigned",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "shifts",
+                "{{shiftId}}",
+                "plan",
+                "unassigned"
+              ]
+            },
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test(\"every trip has a reason\", () => { const r = pm.response.json(); pm.expect(r.every(u => !!u.reason)).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cab timeline",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/shifts/{{shiftId}}/cabs/CAB-007/timeline",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "shifts",
+                "{{shiftId}}",
+                "cabs",
+                "CAB-007",
+                "timeline"
+              ]
+            },
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test(\"charge shown at each step\", () => { const r = pm.response.json(); pm.expect(r.every(a => a.socStartKWh !== undefined && a.socEndKWh !== undefined)).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Run the validator",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/shifts/{{shiftId}}/plan/validate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "shifts",
+                "{{shiftId}}",
+                "plan",
+                "validate"
+              ]
+            },
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test(\"plan is valid\", () => { const r = pm.response.json(); pm.expect(r.valid === true).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3 Live events",
+      "item": [
+        {
+          "name": "Battery drift: CAB-007 at 22%",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/shifts/{{shiftId}}/events/soc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "shifts",
+                "{{shiftId}}",
+                "events",
+                "soc"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cabId\": \"CAB-007\",\n  \"socPercent\": 22,\n  \"observedAt\": \"19:30\",\n  \"seq\": 1,\n  \"idempotencyKey\": \"postman-drift-1\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test(\"applied\", () => { const r = pm.response.json(); pm.expect(r.outcome === 'APPLIED').to.be.true; });",
+                  "pm.test(\"under 2 s\", () => { const r = pm.response.json(); pm.expect(r.replanMillis < 2000).to.be.true; });",
+                  "pm.test(\"not a duplicate\", () => { const r = pm.response.json(); pm.expect(r.duplicate === false).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Same event again is a duplicate",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/shifts/{{shiftId}}/events/soc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "shifts",
+                "{{shiftId}}",
+                "events",
+                "soc"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cabId\": \"CAB-007\",\n  \"socPercent\": 22,\n  \"observedAt\": \"19:30\",\n  \"seq\": 1,\n  \"idempotencyKey\": \"postman-drift-1\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test(\"replayed\", () => { const r = pm.response.json(); pm.expect(r.duplicate === true).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Older event is refused",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/shifts/{{shiftId}}/events/soc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "shifts",
+                "{{shiftId}}",
+                "events",
+                "soc"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cabId\": \"CAB-007\",\n  \"socPercent\": 30,\n  \"observedAt\": \"19:30\",\n  \"seq\": 0,\n  \"idempotencyKey\": \"postman-drift-old\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 409', () => pm.response.to.have.status(409));",
+                  "pm.test(\"out of order\", () => { const r = pm.response.json(); pm.expect(r.code === 'EVENT_OUT_OF_ORDER').to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Charger H1-C1 fails",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/shifts/{{shiftId}}/chargers/H1-C1/failure",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "shifts",
+                "{{shiftId}}",
+                "chargers",
+                "H1-C1",
+                "failure"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"failedAt\": \"19:45\",\n  \"idempotencyKey\": \"postman-charger-1\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test(\"applied\", () => { const r = pm.response.json(); pm.expect(r.outcome === 'APPLIED').to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Same charger cannot fail twice",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/shifts/{{shiftId}}/chargers/H1-C1/failure",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "shifts",
+                "{{shiftId}}",
+                "chargers",
+                "H1-C1",
+                "failure"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"failedAt\": \"20:00\",\n  \"idempotencyKey\": \"postman-charger-2\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 409', () => pm.response.to.have.status(409));",
+                  "pm.test(\"conflict code\", () => { const r = pm.response.json(); pm.expect(r.code === 'CHARGER_ALREADY_FAILED').to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Validator after both events",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/shifts/{{shiftId}}/plan/validate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "shifts",
+                "{{shiftId}}",
+                "plan",
+                "validate"
+              ]
+            },
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test(\"still valid\", () => { const r = pm.response.json(); pm.expect(r.valid === true).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Version history",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/shifts/{{shiftId}}/plan/versions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "shifts",
+                "{{shiftId}}",
+                "plan",
+                "versions"
+              ]
+            },
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test(\"three versions\", () => { const r = pm.response.json(); pm.expect(r.length === 3).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Fresh plan refused on a live shift",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/shifts/{{shiftId}}/plan",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "shifts",
+                "{{shiftId}}",
+                "plan"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 409', () => pm.response.to.have.status(409));",
+                  "pm.test(\"live code\", () => { const r = pm.response.json(); pm.expect(r.code === 'SHIFT_IS_LIVE').to.be.true; });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4 Security",
+      "item": [
+        {
+          "name": "No token",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/shifts/{{shiftId}}/plan/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "shifts",
+                "{{shiftId}}",
+                "plan",
+                "summary"
+              ]
+            },
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 401', () => pm.response.to.have.status(401));",
+                  "pm.test(\"code\", () => { const r = pm.response.json(); pm.expect(r.code === 'UNAUTHENTICATED').to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Other tenant gets 404",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/shifts/{{shiftId}}/plan/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "shifts",
+                "{{shiftId}}",
+                "plan",
+                "summary"
+              ]
+            },
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{globexToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Employee cannot read plans",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/shifts/{{shiftId}}/plan/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "shifts",
+                "{{shiftId}}",
+                "plan",
+                "summary"
+              ]
+            },
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{employeeToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 403', () => pm.response.to.have.status(403));",
+                  "pm.test(\"code\", () => { const r = pm.response.json(); pm.expect(r.code === 'FORBIDDEN').to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Operator cannot run the planner",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/shifts/{{shiftId}}/plan",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "shifts",
+                "{{shiftId}}",
+                "plan"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Employee sees own trip",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/me/trip",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "me",
+                "trip"
+              ]
+            },
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{employeeToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test(\"own trip\", () => { const r = pm.response.json(); pm.expect(r.tripId === 'T-0001').to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin creates a small shift",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/admin/shifts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "shifts"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cabs\": 30,\n  \"hubs\": 2,\n  \"chargersPerHub\": 2,\n  \"trips\": 100,\n  \"seed\": 7\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5 Operations",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            },
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test(\"up\", () => { const r = pm.response.json(); pm.expect(r.status === 'UP').to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Prometheus metrics",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/actuator/prometheus",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "prometheus"
+              ]
+            },
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('fleet metrics', () => { pm.expect(pm.response.text()).to.include('events_total'); pm.expect(pm.response.text()).to.include('replan_latency_seconds'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
