@@ -7,6 +7,8 @@ set -euo pipefail
 API=${API:-http://localhost:8080}
 PASSWORD=${SEED_PASSWORD:-demo-password}
 RUN=$(date +%s)
+# Windows installs Python as "python".
+PYTHON=$(command -v python3 || command -v python)
 
 step() {
     printf '\n=== %s\n' "$1"
@@ -16,7 +18,7 @@ step() {
 login() {
     curl -sf "$API/auth/login" -H 'content-type: application/json' \
         -d "{\"username\":\"$1\",\"password\":\"$PASSWORD\"}" |
-        python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])'
+        "$PYTHON" -c 'import json,sys; print(json.load(sys.stdin)["token"])'
 }
 
 # call TOKEN METHOD PATH [BODY]: prints the HTTP status and the JSON, cut to MAX_LINES.
@@ -28,7 +30,7 @@ call() {
     status=${output##*$'\n'}
     body=${output%$'\n'*}
     echo "HTTP $status"
-    echo "$body" | python3 -m json.tool 2>/dev/null | head -n "${MAX_LINES:-30}" || true
+    echo "$body" | "$PYTHON" -m json.tool 2>/dev/null | head -n "${MAX_LINES:-30}" || true
 }
 
 ADMIN=$(login admin@acme)
