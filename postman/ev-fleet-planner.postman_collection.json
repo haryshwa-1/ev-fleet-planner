@@ -414,6 +414,47 @@
               }
             }
           ]
+        },
+        {
+          "name": "Overnight charging schedule",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/shifts/{{shiftId}}/plan/overnight",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "shifts",
+                "{{shiftId}}",
+                "plan",
+                "overnight"
+              ]
+            },
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('every cab is ready and the schedule is valid', () => { const r = pm.response.json(); pm.expect(r.valid).to.be.true; pm.expect(r.notReady.length).to.equal(0); });"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -567,6 +608,106 @@
                 "exec": [
                   "pm.test('status 409', () => pm.response.to.have.status(409));",
                   "pm.test(\"out of order\", () => { const r = pm.response.json(); pm.expect(r.code === 'EVENT_OUT_OF_ORDER').to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Same key on a different event is refused",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/shifts/{{shiftId}}/events/soc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "shifts",
+                "{{shiftId}}",
+                "events",
+                "soc"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"cabId\": \"CAB-009\", \"socPercent\": 18, \"observedAt\": \"19:30\", \"seq\": 1, \"idempotencyKey\": \"postman-drift-1\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('code is IDEMPOTENCY_KEY_REUSED', () => pm.expect(pm.response.json().code).to.equal('IDEMPOTENCY_KEY_REUSED'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Time after the shift is refused",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/shifts/{{shiftId}}/events/soc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "shifts",
+                "{{shiftId}}",
+                "events",
+                "soc"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{operatorToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"cabId\": \"CAB-009\", \"socPercent\": 40, \"observedAt\": \"23:30+1\", \"seq\": 1, \"idempotencyKey\": \"postman-late-time\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 422', () => pm.response.to.have.status(422));",
+                  "pm.test('code is EVENT_TIME_AFTER_SHIFT', () => pm.expect(pm.response.json().code).to.equal('EVENT_TIME_AFTER_SHIFT'));"
                 ]
               }
             }

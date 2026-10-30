@@ -6,6 +6,7 @@ import com.moveinsync.evfleet.core.model.Scenario;
 import com.moveinsync.evfleet.core.model.Vehicle;
 import com.moveinsync.evfleet.core.plan.Plan;
 import com.moveinsync.evfleet.core.planner.GreedyPlanner;
+import com.moveinsync.evfleet.core.planner.LocalSearch;
 import com.moveinsync.evfleet.core.planner.MultiStartPlanner;
 import com.moveinsync.evfleet.core.planner.Replanner;
 import com.moveinsync.evfleet.core.util.Clock;
@@ -33,8 +34,8 @@ public final class PlannerBenchmark {
     public static void main(String[] args) {
         new GreedyPlanner().plan(new ScenarioGenerator().generate(params(300)));
 
-        System.out.println("| Cabs | Trips | Chargers | Greedy s | Multi-start s | Backup (greedy) | Backup (multi) | Lower bound | Bound s | Validate ms | Valid |");
-        System.out.println("|---|---|---|---|---|---|---|---|---|---|---|");
+        System.out.println("| Cabs | Trips | Chargers | Greedy s | Multi-start s | Local search s | Backup (greedy) | Backup (multi) | Backup (final) | Lower bound | Bound s | Validate ms | Valid |");
+        System.out.println("|---|---|---|---|---|---|---|---|---|---|---|---|---|");
         StringBuilder replans = new StringBuilder("""
                 | Cabs | Events | Valid | p50 ms | p95 ms | p99 ms | Max ms | Events/s | Trips moved per event |
                 |---|---|---|---|---|---|---|---|---|
@@ -49,12 +50,18 @@ public final class PlannerBenchmark {
 
             String multiSeconds = "skipped";
             String multiBackup = "-";
+            String searchSeconds = "skipped";
+            String finalBackup = "-";
             Plan best = greedy;
             if (cabs <= MULTI_START_MAX_CABS) {
                 t = System.nanoTime();
                 best = MultiStartPlanner.standard().plan(s).best().plan();
                 multiSeconds = String.format("%.1f", seconds(t));
                 multiBackup = String.valueOf(best.unassigned().size());
+                t = System.nanoTime();
+                best = new LocalSearch().improve(s, best).plan();
+                searchSeconds = String.format("%.1f", seconds(t));
+                finalBackup = String.valueOf(best.unassigned().size());
             }
 
             t = System.nanoTime();
@@ -65,8 +72,9 @@ public final class PlannerBenchmark {
             ValidationReport report = new PlanValidator().validate(s, best);
             long validateMillis = (System.nanoTime() - t) / 1_000_000;
 
-            System.out.printf("| %d | %d | %d | %.1f | %s | %d | %s | %d | %.1f | %d | %s |%n", cabs, p.trips(),
-                    p.hubs() * p.chargersPerHub(), greedySeconds, multiSeconds, greedy.unassigned().size(), multiBackup,
+            System.out.printf("| %d | %d | %d | %.1f | %s | %s | %d | %s | %s | %d | %.1f | %d | %s |%n", cabs, p.trips(),
+                    p.hubs() * p.chargersPerHub(), greedySeconds, multiSeconds, searchSeconds, greedy.unassigned().size(),
+                    multiBackup, finalBackup,
                     bound, boundSeconds, validateMillis, report.valid() ? "yes" : "NO");
             System.out.flush();
             replans.append(replanRow(s, best));
