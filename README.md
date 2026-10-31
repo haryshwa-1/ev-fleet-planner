@@ -7,6 +7,8 @@ exceeding its chargers, or any trip finishing late. Trips no EV can cover go to 
 > Status: the planning engine, live re-planning and the Spring Boot service are complete and tested.
 > See [DESIGN.md](DESIGN.md) for architecture, failure modes and trade-offs, and [BENCHMARK.md](BENCHMARK.md) for measurements.
 
+**Demo video:** https://youtu.be/_BECi2-erhI
+
 ## Results (300 cabs, 5 hubs / 40 chargers, 1,500 trips, seed 42)
 
 | | |
